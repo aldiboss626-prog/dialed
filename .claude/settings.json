@@ -1,0 +1,10 @@
+{
+  "enabledPlugins": {
+    "expo@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "PowerShell(npx expo start --tunnel --port 8082 2>&1)"
+    ]
+  }
+}

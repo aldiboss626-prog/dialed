@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
+    background-color: #141318;
+    color: #F2EDE8;
+    font-family: 'DM Sans', sans-serif;
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #root {
+    min-height: 100dvh;
+    background-color: #141318;
+  }
+
+  /* Remove default button styles */
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2C2A34; border-radius: 2px; }
+}
+
+@layer components {
+  .section-label {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #5A5760;
+  }
+
+  .font-display {
+    font-family: 'Cormorant Garamond', serif;
+  }
+
+  .wordmark {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: #C9A84C;
+  }
+
+  .card-surface {
+    background-color: #1E1C24;
+    border: 1px solid #2C2A34;
+    border-radius: 12px;
+  }
+
+  .btn-gold {
+    background-color: #C9A84C;
+    color: #141318;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    border-radius: 12px;
+    padding: 14px 24px;
+    border: none;
+    width: 100%;
+    font-size: 16px;
+    transition: opacity 0.15s;
+  }
+  .btn-gold:active { opacity: 0.85; }
+
+  .btn-ghost-gold {
+    background: transparent;
+    color: #C9A84C;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    border-radius: 12px;
+    padding: 14px 24px;
+    border: 1px solid #C9A84C;
+    width: 100%;
+    font-size: 16px;
+    transition: background-color 0.15s;
+  }
+  .btn-ghost-gold:active { background-color: rgba(201,168,76,0.08); }
+}
+
+@layer utilities {
+  /* Pulsing red dot — loops forever like a heartbeat */
+  @keyframes pulse-dot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.15); opacity: 0.8; }
+  }
+  .animate-pulse-dot {
+    animation: pulse-dot 2000ms ease-in-out infinite;
+  }
+
+  /* One-shot overdue badge fade-in with single red pulse */
+  @keyframes overdue-appear {
+    0% { opacity: 0; transform: scale(0.9); }
+    60% { opacity: 1; transform: scale(1.04); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  .animate-overdue-appear {
+    animation: overdue-appear 400ms ease-out forwards;
+  }
+
+  /* Count-up / count-down number animation handled via JS */
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+
+  /* Reduce motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
