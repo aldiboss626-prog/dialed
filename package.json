@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
-    "install:all": "npm install && npm install --prefix client && npm install --prefix server"
+    "mobile": "npm run start --prefix mobile",
+    "install:all": "npm install && npm install --prefix client && npm install --prefix server && npm install --prefix mobile"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

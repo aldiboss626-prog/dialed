@@ -45,7 +45,8 @@ export default function Login() {
               onChange={e => setEmail(e.target.value)}
               placeholder="Email"
               required
-              className="w-full bg-surface border border-border rounded-xl px-4 py-4 font-sans text-primary placeholder-tertiary focus:outline-none focus:border-gold text-base transition-colors"
+              className="w-full bg-surface rounded-[18px] px-4 py-4 font-sans text-primary placeholder-tertiary focus:outline-none text-base transition-colors"
+              style={{ border: '1px solid rgba(255,255,255,0.06)' }}
             />
           </div>
           <div className="relative">
@@ -55,7 +56,8 @@ export default function Login() {
               onChange={e => setPassword(e.target.value)}
               placeholder="Password"
               required
-              className="w-full bg-surface border border-border rounded-xl px-4 py-4 font-sans text-primary placeholder-tertiary focus:outline-none focus:border-gold text-base transition-colors"
+              className="w-full bg-surface rounded-[18px] px-4 py-4 font-sans text-primary placeholder-tertiary focus:outline-none text-base transition-colors"
+              style={{ border: '1px solid rgba(255,255,255,0.06)' }}
             />
           </div>
 

@@ -56,8 +56,9 @@
 
   .card-surface {
     background-color: #1E1C24;
-    border: 1px solid #2C2A34;
-    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 18px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.18);
   }
 
   .btn-gold {
@@ -65,8 +66,9 @@
     color: #141318;
     font-family: 'DM Sans', sans-serif;
     font-weight: 500;
-    border-radius: 12px;
-    padding: 14px 24px;
+    border-radius: 18px;
+    padding: 16px 24px;
+    min-height: 56px;
     border: none;
     width: 100%;
     font-size: 16px;
@@ -79,8 +81,9 @@
     color: #C9A84C;
     font-family: 'DM Sans', sans-serif;
     font-weight: 500;
-    border-radius: 12px;
-    padding: 14px 24px;
+    border-radius: 18px;
+    padding: 16px 24px;
+    min-height: 56px;
     border: 1px solid #C9A84C;
     width: 100%;
     font-size: 16px;

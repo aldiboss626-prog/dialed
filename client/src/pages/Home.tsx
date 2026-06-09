@@ -37,8 +37,8 @@ function StatCard({ label, value, color, delay }: { label: string; value: number
   const count = useCountUp(value, delay)
   return (
     <motion.div
-      className="flex-1 bg-surface rounded-xl px-3 py-3 border-l-[3px]"
-      style={{ borderLeftColor: color, borderTop: '1px solid #2C2A34', borderRight: '1px solid #2C2A34', borderBottom: '1px solid #2C2A34' }}
+      className="flex-1 bg-surface rounded-[18px] px-4 py-5"
+      style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: delay / 1000 }}
@@ -46,7 +46,7 @@ function StatCard({ label, value, color, delay }: { label: string; value: number
       <div className="font-display font-bold tabular-nums" style={{ fontSize: 28, color, lineHeight: 1 }}>
         {count}
       </div>
-      <p className="section-label mt-1" style={{ fontSize: 9 }}>{label}</p>
+      <p className="section-label mt-1.5" style={{ fontSize: 9 }}>{label}</p>
     </motion.div>
   )
 }
@@ -58,8 +58,8 @@ function HeroCard({ contact, onClick, index }: { contact: Contact; onClick: () =
 
   return (
     <motion.div
-      className="w-full rounded-xl p-4 cursor-pointer border border-[#2C2A34] border-l-4 shadow-overdue mb-3"
-      style={{ borderLeftColor: '#E05252', minHeight: 160 }}
+      className="w-full rounded-[18px] p-4 cursor-pointer mb-3"
+      style={{ minHeight: 160, background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.1 + index * 0.06 }}
@@ -69,7 +69,7 @@ function HeroCard({ contact, onClick, index }: { contact: Contact; onClick: () =
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
           <div
-            className="flex items-center justify-center rounded-xl bg-elevated border border-border flex-shrink-0"
+            className="flex items-center justify-center rounded-xl bg-elevated flex-shrink-0"
             style={{ width: 48, height: 48 }}
           >
             <span className="font-sans text-secondary" style={{ fontSize: 16 }}>{initials(contact.name)}</span>
@@ -116,8 +116,8 @@ function MediumCard({ contact, onClick, index }: { contact: Contact; onClick: ()
 
   return (
     <motion.div
-      className="w-full rounded-xl p-4 cursor-pointer border border-[#2C2A34] border-l-4 mb-3"
-      style={{ borderLeftColor: borderColor, minHeight: 120 }}
+      className="w-full rounded-[18px] p-4 cursor-pointer mb-3"
+      style={{ minHeight: 120, background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.1 + index * 0.06 }}
@@ -127,7 +127,7 @@ function MediumCard({ contact, onClick, index }: { contact: Contact; onClick: ()
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-3">
           <div
-            className="flex items-center justify-center rounded-xl bg-elevated border border-border flex-shrink-0"
+            className="flex items-center justify-center rounded-xl bg-elevated flex-shrink-0"
             style={{ width: 44, height: 44 }}
           >
             <span className="font-sans text-secondary" style={{ fontSize: 14 }}>{initials(contact.name)}</span>
@@ -167,7 +167,7 @@ function CompactRow({ contact, onClick, index }: { contact: Contact; onClick: ()
       onClick={onClick}
     >
       <div
-        className="flex items-center justify-center rounded-xl bg-elevated border border-border flex-shrink-0"
+        className="flex items-center justify-center rounded-xl bg-elevated flex-shrink-0"
         style={{ width: 36, height: 36 }}
       >
         <span className="font-sans text-tertiary" style={{ fontSize: 11 }}>{initials(contact.name)}</span>
@@ -279,7 +279,7 @@ export default function Home() {
       </div>
 
       {/* Summary strip — 5 cards, scrollable */}
-      <div className="flex gap-2 mb-5 overflow-x-auto pb-1 -mx-4 px-4">
+      <div className="flex gap-2 mb-7 overflow-x-auto pb-1 -mx-4 px-4">
         <StatCard label="OVERDUE" value={overdueCt} color="#E05252" delay={0} />
         <StatCard label="DUE SOON" value={dueSoonCt} color="#D4852A" delay={100} />
         <StatCard label="AWAITING" value={awaitingCt} color="#D4852A" delay={200} />
@@ -289,7 +289,7 @@ export default function Home() {
 
       {/* Greeting */}
       <motion.div
-        className="mb-5"
+        className="mb-8"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3, delay: 0.15 }}
@@ -305,7 +305,7 @@ export default function Home() {
       <AnimatePresence>
         {pending.length > 0 && (
           <motion.div
-            className="mb-5"
+            className="mb-7"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
@@ -318,7 +318,7 @@ export default function Home() {
               return (
                 <motion.div
                   key={pr.id}
-                  className="flex items-center gap-3 py-3 cursor-pointer border-b border-border"
+                  className="flex items-center gap-3 py-4 cursor-pointer border-b border-border"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: i * 0.05 }}
@@ -334,7 +334,7 @@ export default function Home() {
                   />
                   {/* Avatar */}
                   <div
-                    className="flex items-center justify-center rounded-xl bg-elevated border border-border flex-shrink-0"
+                    className="flex items-center justify-center rounded-xl bg-elevated flex-shrink-0"
                     style={{ width: 40, height: 40 }}
                   >
                     <span className="font-sans text-secondary" style={{ fontSize: 13 }}>
@@ -343,7 +343,7 @@ export default function Home() {
                   </div>
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-display font-semibold text-primary truncate" style={{ fontSize: 17 }}>
+                    <p className="font-display font-semibold text-primary truncate" style={{ fontSize: 18 }}>
                       {pr.contact.name}
                     </p>
                     <p className="font-sans text-secondary truncate" style={{ fontSize: 13 }}>

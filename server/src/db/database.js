@@ -26,5 +26,8 @@ addCol('email_threads', 'requires_response', 'INTEGER DEFAULT 0');
 addCol('email_threads', 'response_detected_at', 'DATETIME');
 addCol('users', 'streak_count', 'INTEGER DEFAULT 0');
 addCol('users', 'last_activity_date', 'DATE');
+addCol('users', 'google_access_token', 'TEXT');
+addCol('users', 'google_refresh_token', 'TEXT');
+addCol('users', 'google_token_expiry', 'INTEGER');
 
 module.exports = db;

@@ -15,13 +15,14 @@ const gmailRoutes = require('./routes/gmail');
 const draftRoutes = require('./routes/draft');
 const pendingResponsesRoutes = require('./routes/pendingResponses');
 const trackerRoutes = require('./routes/tracker');
+const contentRoutes = require('./routes/content');
 const { startEscalationEngine } = require('./services/escalation');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: (origin, cb) => cb(null, true), // allow all origins (dev only — tighten for production)
   credentials: true,
 }));
 app.use(express.json());
@@ -35,9 +36,10 @@ app.use('/api/gmail', gmailRoutes);
 app.use('/api', draftRoutes);
 app.use('/api/pending-responses', pendingResponsesRoutes);
 app.use('/api/tracker', trackerRoutes);
+app.use('/api/content', contentRoutes);
 
 startEscalationEngine();
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Dialed server running on http://localhost:${PORT}`);
 });

@@ -20,8 +20,8 @@ function OppCard({ opp, onStatusChange }: { opp: Opportunity; onStatusChange: (i
   if (opp.state === 'overdue') {
     return (
       <div
-        className="rounded-xl p-4 mb-3 border border-[#2C2A34] border-l-4 shadow-overdue-sm"
-        style={{ borderLeftColor: '#E05252' }}
+        className="rounded-[18px] p-4 mb-3"
+        style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div className="flex items-start justify-between mb-2">
           <div className="flex-1 min-w-0">
@@ -54,8 +54,8 @@ function OppCard({ opp, onStatusChange }: { opp: Opportunity; onStatusChange: (i
   if (opp.state === 'upcoming') {
     return (
       <div
-        className="rounded-xl p-4 mb-3 border border-[#2C2A34] border-l-4"
-        style={{ borderLeftColor: '#D4852A' }}
+        className="rounded-[18px] p-4 mb-3"
+        style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div className="flex items-start justify-between mb-2">
           <div className="flex-1 min-w-0">
@@ -107,7 +107,7 @@ function OppCard({ opp, onStatusChange }: { opp: Opportunity; onStatusChange: (i
 
   // Active
   return (
-    <div className="flex items-center gap-3 py-3 border-b border-border border-l-2 pl-3" style={{ borderLeftColor: '#5A5760' }}>
+    <div className="flex items-center gap-3 py-3 border-b border-border">
       <div className="flex-1 min-w-0">
         <p className="font-sans text-primary" style={{ fontSize: 15 }}>{opp.title}</p>
         {opp.contact && (
@@ -161,7 +161,8 @@ function AddOppForm({ contacts, onAdd, onCancel }: {
   return (
     <motion.form
       onSubmit={handleSubmit}
-      className="bg-surface border border-border rounded-xl p-4 mb-4"
+      className="bg-surface rounded-[18px] p-4 mb-4"
+      style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
@@ -177,7 +178,8 @@ function AddOppForm({ contacts, onAdd, onCancel }: {
         <select
           value={contactId}
           onChange={e => setContactId(e.target.value)}
-          className="bg-elevated border border-border rounded-lg px-3 py-2 font-sans text-sm text-primary focus:outline-none"
+          className="bg-elevated rounded-lg px-3 py-2 font-sans text-sm text-primary focus:outline-none"
+          style={{ border: '1px solid rgba(255,255,255,0.08)' }}
         >
           <option value="">No contact</option>
           {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -186,14 +188,15 @@ function AddOppForm({ contacts, onAdd, onCancel }: {
           type="date"
           value={deadline}
           onChange={e => setDeadline(e.target.value)}
-          className="bg-elevated border border-border rounded-lg px-3 py-2 font-sans text-sm text-primary focus:outline-none"
+          className="bg-elevated rounded-lg px-3 py-2 font-sans text-sm text-primary focus:outline-none"
+          style={{ border: '1px solid rgba(255,255,255,0.08)' }}
         />
       </div>
       <div className="flex gap-2">
         <button type="submit" disabled={loading} className="btn-gold" style={{ flex: 1, padding: '10px 16px', fontSize: 14 }}>
           {loading ? 'Adding…' : 'Add Opportunity'}
         </button>
-        <button type="button" onClick={onCancel} className="px-4 py-2 font-sans text-secondary text-sm border border-border rounded-xl">
+        <button type="button" onClick={onCancel} className="px-4 py-2 font-sans text-secondary text-sm rounded-[18px]" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
           Cancel
         </button>
       </div>

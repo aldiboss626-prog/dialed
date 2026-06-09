@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/ui/StatusBadge'
 import { Stars } from '../components/ui/Stars'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import { DraftModal } from '../components/DraftModal'
+import { ArcProgress } from '../components/ui/ArcProgress'
 import type { Contact, PendingResponse } from '../types'
 
 // Animated count up/down hook
@@ -130,7 +131,7 @@ export default function ContactDetail() {
       {/* Header - LEFT ALIGNED */}
       <div className="flex items-start gap-4 mb-4">
         <motion.div
-          className="flex items-center justify-center rounded-xl bg-elevated border border-border flex-shrink-0"
+          className="flex items-center justify-center rounded-xl bg-elevated flex-shrink-0"
           style={{ width: 68, height: 68 }}
           initial={{ scale: 0.85, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -162,12 +163,11 @@ export default function ContactDetail() {
       <AnimatePresence>
         {pendingResponse && (
           <motion.div
-            className="rounded-xl p-3 mb-4 border-l-4"
+            className="rounded-[18px] p-3 mb-4"
             style={{
-              background: 'rgba(212,133,42,0.08)',
-              borderLeftColor: '#D4852A',
-              border: '1px solid rgba(212,133,42,0.2)',
-              borderLeftWidth: 4,
+              background: 'rgba(212,133,42,0.06)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
+              border: '1px solid rgba(255,255,255,0.04)',
             }}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -251,47 +251,68 @@ export default function ContactDetail() {
         )}
       </motion.div>
 
-      {/* Asymmetric stats */}
+      {/* Hero days card with arc */}
       <motion.div
-        className="flex gap-3 mb-6"
+        className="w-full rounded-[20px] p-6 mb-4 flex flex-col items-center"
+        style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2, delay: 0.12 }}
       >
-        {/* Left 60%: big day counter */}
-        <div className="flex-[3] bg-surface rounded-xl border border-border px-4 py-4">
-          <AnimatePresence mode="wait">
-            <motion.span
-              key={contact.days_since_contact}
-              className="font-display font-bold tabular-nums block"
-              style={{ fontSize: 54, lineHeight: 1, color: dayColor }}
-            >
-              {dayCount}
-            </motion.span>
-          </AnimatePresence>
-          <p className="font-sans text-tertiary mt-1" style={{ fontSize: 11 }}>days since contact</p>
-        </div>
-
-        {/* Right 40%: two tiles */}
-        <div className="flex-[2] flex flex-col gap-2">
-          <div className="bg-surface rounded-xl border border-border px-3 py-3 flex-1">
-            <p className="font-display font-semibold text-primary" style={{ fontSize: 16 }}>Every {contact.cadence_days}d</p>
-            <p className="font-sans text-tertiary" style={{ fontSize: 11 }}>cadence</p>
-          </div>
-          <div className="bg-surface rounded-xl border border-border px-3 py-3 flex-1 flex items-center gap-1">
-            <Stars count={contact.stars} size={12} />
+        <div className="relative flex items-center justify-center" style={{ width: 152, height: 152 }}>
+          <ArcProgress
+            size={152}
+            progress={contact.days_since_contact / contact.cadence_days}
+            color={dayColor}
+            strokeWidth={3}
+          />
+          <div className="text-center z-10">
+            <AnimatePresence mode="wait">
+              <motion.span
+                key={contact.days_since_contact}
+                className="font-display font-bold tabular-nums block"
+                style={{ fontSize: 88, lineHeight: 1, color: dayColor }}
+              >
+                {dayCount}
+              </motion.span>
+            </AnimatePresence>
+            <p className="font-sans text-tertiary" style={{ fontSize: 11 }}>days since contact</p>
           </div>
         </div>
       </motion.div>
 
+      {/* 3-col mini stat strip */}
+      <motion.div
+        className="grid grid-cols-3 gap-3 mb-8"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2, delay: 0.18 }}
+      >
+        {[
+          { value: String(contact.days_since_contact), label: 'days', color: dayColor },
+          { value: `${contact.cadence_days}d`, label: 'cadence', color: '#F2EDE8' },
+          { value: `${contact.stars}★`, label: 'priority', color: '#C9A84C' },
+        ].map(stat => (
+          <div
+            key={stat.label}
+            className="rounded-[16px] p-4 text-center bg-surface"
+            style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
+          >
+            <p className="font-display font-bold tabular-nums" style={{ fontSize: 22, color: stat.color, lineHeight: 1 }}>{stat.value}</p>
+            <p className="section-label mt-1.5">{stat.label}</p>
+          </div>
+        ))}
+      </motion.div>
+
       {/* Recent emails */}
       {contact.email_threads && contact.email_threads.length > 0 && (
-        <div className="mb-6">
+        <div className="mb-8">
           <SectionLabel className="mb-3">Recent Emails</SectionLabel>
           {contact.email_threads.map((email, i) => (
             <div
               key={email.id}
-              className={i === 0 ? 'bg-surface border border-border rounded-xl p-4 mb-2' : 'flex items-center gap-3 py-2 border-b border-border'}
+              className={i === 0 ? 'bg-surface rounded-[18px] p-4 mb-2' : 'flex items-center gap-3 py-2 border-b border-border'}
+              style={i === 0 ? { boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' } : undefined}
             >
               {i === 0 ? (
                 <>

@@ -82,7 +82,8 @@ export default function Orbit() {
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Search your Orbit…"
-          className="w-full bg-surface border border-border rounded-full pl-10 pr-4 py-3 font-sans text-primary placeholder-tertiary focus:outline-none focus:border-secondary text-sm transition-colors"
+          className="w-full bg-surface rounded-full pl-10 pr-4 py-3 font-sans text-primary placeholder-tertiary focus:outline-none text-sm transition-colors"
+          style={{ border: '1px solid rgba(255,255,255,0.06)' }}
         />
       </motion.div>
 
@@ -130,7 +131,6 @@ export default function Orbit() {
                 <motion.div
                   key={c.id}
                   className="flex items-center gap-3 py-3 cursor-pointer border-b border-border"
-                  style={{ borderLeft: `3px solid ${statusColor[c.status]}`, paddingLeft: 12 }}
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.2, delay: i * 0.04 }}
@@ -139,7 +139,7 @@ export default function Orbit() {
                 >
                   {/* Avatar */}
                   <div
-                    className="flex items-center justify-center rounded-xl bg-elevated border border-border flex-shrink-0"
+                    className="flex items-center justify-center rounded-xl bg-elevated flex-shrink-0"
                     style={{ width: 44, height: 44 }}
                   >
                     <span className="font-sans text-secondary" style={{ fontSize: 14 }}>{initials(c.name)}</span>

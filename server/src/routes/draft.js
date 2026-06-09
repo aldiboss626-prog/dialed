@@ -6,7 +6,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 router.post('/draft', authenticate, async (req, res) => {
-  const { contactId, pendingResponseId } = req.body;
+  const { contactId, pendingResponseId, emailContent, emailImage } = req.body;
   if (!contactId) return res.status(400).json({ message: 'contactId required' });
 
   const contact = db.prepare('SELECT * FROM contacts WHERE id = ? AND user_id = ?').get(contactId, req.userId);
@@ -46,6 +46,31 @@ Active opportunities linked to this contact:
 ${opps.map(o => `- ${o.title} (${o.status}, deadline: ${o.deadline || 'TBD'})`).join('\n') || 'None'}
 `.trim();
 
+  // If a screenshot was provided, extract the email text via vision before drafting
+  let extractedFromImage = null;
+  if (emailImage) {
+    try {
+      const match = emailImage.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (match) {
+        const [, mediaType, base64Data] = match;
+        const extraction = await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 600,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
+              { type: 'text', text: 'Extract the full text of the email shown in this screenshot. Return only the email body text — no labels, no formatting, just the message content.' }
+            ]
+          }]
+        });
+        extractedFromImage = extraction.content[0].text.trim();
+      }
+    } catch (err) {
+      console.error('Vision extraction error:', err.message);
+    }
+  }
+
   // If this is a reply to a specific inbound email, use the reply prompt
   let systemPrompt, userContent;
   if (pendingResponseId) {
@@ -57,8 +82,11 @@ ${opps.map(o => `- ${o.title} (${o.status}, deadline: ${o.deadline || 'TBD'})`).
     `).get(pendingResponseId, req.userId);
 
     if (pr) {
+      const messageBody = extractedFromImage || emailContent || pr.email_body || pr.preview || null;
       systemPrompt = `You are helping ${user.name} reply to an email they received from ${contact.name}${contact.role ? ', ' + contact.role : ''}. The email was about: "${pr.subject}". Write a warm, professional reply in first person as ${user.name}. 3-5 sentences. Reference the specific topic they raised. Sound like a real person responding promptly, not a template. Output only the message body — no greeting prefix, no sign-off.`;
-      userContent = `Draft a reply to this email:\n\nFrom: ${contact.name}\nSubject: ${pr.subject}\nMessage: ${pr.email_body || pr.preview}\n\nContext:\n${context}`;
+      userContent = messageBody
+        ? `Draft a reply to this email:\n\nFrom: ${contact.name}\nSubject: ${pr.subject}\nMessage: ${messageBody}\n\nContext:\n${context}`
+        : `Draft a reply to this email:\n\nFrom: ${contact.name}\nSubject: ${pr.subject}\n\nContext:\n${context}`;
     }
   }
 

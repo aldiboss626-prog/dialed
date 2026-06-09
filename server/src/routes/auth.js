@@ -28,7 +28,7 @@ router.post('/register', (req, res) => {
 
   const token = jwt.sign({ userId: result.lastInsertRowid }, process.env.JWT_SECRET, { expiresIn: '7d' });
   res.cookie('token', token, cookieOpts());
-  res.json({ user: { id: result.lastInsertRowid, email, name } });
+  res.json({ user: { id: result.lastInsertRowid, email, name }, token });
 });
 
 router.post('/login', (req, res) => {
@@ -42,7 +42,7 @@ router.post('/login', (req, res) => {
 
   const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
   res.cookie('token', token, cookieOpts());
-  res.json({ user: { id: user.id, email: user.email, name: user.name } });
+  res.json({ user: { id: user.id, email: user.email, name: user.name }, token });
 });
 
 router.post('/logout', (req, res) => {

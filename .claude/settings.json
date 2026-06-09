@@ -1,10 +1,12 @@
 {
-  "enabledPlugins": {
-    "expo@claude-plugins-official": true
-  },
   "permissions": {
     "allow": [
-      "PowerShell(npx expo start --tunnel --port 8082 2>&1)"
+      "PowerShell(npx expo start --tunnel --port 8082 2>&1)",
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"Set-Location 'c:\\\\Users\\\\aldib\\\\Dialed\\\\mobile'; npx expo start --port 8082\")",
+      "PowerShell(Start-Process powershell -ArgumentList '-NoExit', '-Command', 'Set-Location \"C:\\\\Users\\\\aldib\\\\Dialed\\\\mobile\"; npm start')"
     ]
+  },
+  "enabledPlugins": {
+    "expo@claude-plugins-official": true
   }
 }

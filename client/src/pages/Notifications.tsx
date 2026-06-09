@@ -133,10 +133,12 @@ export default function Notifications() {
           <AnimatePresence>
             {hero && (
               <motion.div
-                className="rounded-xl p-4 mb-4 border border-[#2C2A34] border-l-[3px]"
+                className="rounded-[18px] p-4 mb-4"
                 style={{
-                  borderLeftColor: TYPE_COLORS[hero.type] || '#D4852A',
                   minHeight: 120,
+                  background: '#1E1C24',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
+                  border: '1px solid rgba(255,255,255,0.04)',
                 }}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -171,8 +173,8 @@ export default function Notifications() {
             {urgentAwaiting.map((n, i) => (
               <motion.div
                 key={n.id}
-                className="rounded-xl p-4 mb-3 border border-l-[3px]"
-                style={{ borderColor: '#2C2A34', borderLeftColor: '#D4852A' }}
+                className="rounded-[18px] p-4 mb-3"
+                style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, x: 20 }}

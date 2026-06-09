@@ -77,9 +77,9 @@ export default function Settings() {
     >
       {/* Account */}
       <SectionLabel className="mb-3">Account</SectionLabel>
-      <div className="bg-surface border border-border rounded-xl p-4 mb-5 flex items-center gap-4">
+      <div className="bg-surface rounded-[18px] p-5 mb-7 flex items-center gap-4" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}>
         <div
-          className="flex items-center justify-center rounded-xl bg-elevated border border-border flex-shrink-0"
+          className="flex items-center justify-center rounded-xl bg-elevated flex-shrink-0"
           style={{ width: 48, height: 48 }}
         >
           <span className="font-sans text-secondary font-medium" style={{ fontSize: 16 }}>{initials}</span>
@@ -92,7 +92,7 @@ export default function Settings() {
 
       {/* Gmail */}
       <SectionLabel className="mb-3">Gmail Integration</SectionLabel>
-      <div className="bg-surface border border-border rounded-xl mb-5 divide-y divide-border">
+      <div className="bg-surface rounded-[18px] mb-7 divide-y divide-border" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}>
         <div className="flex items-center justify-between p-4">
           <div>
             <div className="flex items-center gap-2">
@@ -121,7 +121,7 @@ export default function Settings() {
 
       {/* Default cadences */}
       <SectionLabel className="mb-3">Default Cadence</SectionLabel>
-      <div className="bg-surface border border-border rounded-xl mb-5 divide-y divide-border">
+      <div className="bg-surface rounded-[18px] mb-7 divide-y divide-border" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}>
         {cadences.map(c => (
           <div key={c.type} className="flex items-center justify-between p-4">
             <p className="font-sans font-medium text-primary" style={{ fontSize: 15 }}>{c.type}</p>
@@ -132,7 +132,8 @@ export default function Settings() {
                   defaultValue={c.days}
                   min={1}
                   max={90}
-                  className="w-16 bg-elevated border border-border rounded-lg px-2 py-1 font-sans text-primary text-sm text-center focus:outline-none focus:border-gold"
+                  className="w-16 bg-elevated rounded-lg px-2 py-1 font-sans text-primary text-sm text-center focus:outline-none"
+                  style={{ border: '1px solid rgba(255,255,255,0.08)' }}
                   onKeyDown={e => {
                     if (e.key === 'Enter') updateCadence(c.type, parseInt((e.target as HTMLInputElement).value))
                     if (e.key === 'Escape') setEditingCadence(null)
@@ -157,7 +158,7 @@ export default function Settings() {
 
       {/* Notification preferences */}
       <SectionLabel className="mb-3">Notification Preferences</SectionLabel>
-      <div className="bg-surface border border-border rounded-xl mb-5 divide-y divide-border">
+      <div className="bg-surface rounded-[18px] mb-7 divide-y divide-border" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}>
         {[
           { key: 'push', label: 'Push notifications' },
           { key: 'escalation', label: 'Escalation alerts' },
@@ -176,9 +177,9 @@ export default function Settings() {
 
       {/* Coming soon */}
       <SectionLabel className="mb-3">Coming Soon</SectionLabel>
-      <div className="bg-surface border border-border rounded-xl mb-8 divide-y divide-border opacity-50">
+      <div className="bg-surface rounded-[18px] mb-10 divide-y divide-border opacity-50" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}>
         {['LinkedIn Integration', 'Calendar Sync'].map(label => (
-          <div key={label} className="flex items-center justify-between p-4">
+          <div key={label} className="flex items-center justify-between p-5">
             <p className="font-sans text-secondary" style={{ fontSize: 15 }}>{label}</p>
             <Lock size={14} className="text-tertiary" />
           </div>

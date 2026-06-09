@@ -1,3 +1,7 @@
+// When calling the real Gmail API, use format=metadata with:
+//   metadataHeaders=Subject,From,To,Date
+// This reads only headers (non-restricted). Do NOT use format=full or format=raw.
+// Store subject/sender/date/is_from_user as usual; leave body and preview empty.
 const db = require('../db/database');
 
 function nowStr() {

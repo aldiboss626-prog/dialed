@@ -4,132 +4,109 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @AGENTS.md
 
-## Commands
+## Repository layout
 
-```bash
-# Root — run both servers concurrently (requires npm install at root first)
-npm run dev
-
-# Server only (from repo root)
-cd server && npm run dev      # nodemon, restarts on change
-
-# Client only (from repo root)
-cd client && npm run dev      # Vite HMR on port 5173
-
-# Install all dependencies from scratch
-npm run install:all           # installs root + client + server
-
-# TypeScript check (no emit)
-cd client && npx tsc --noEmit
-
-# Production build
-cd client && npm run build    # outputs to client/dist/
-```
-
-**Reset the database** (forces re-seed on next server start):
-```bash
-rm server/data/dialed.db
-```
-The seed runs automatically when `alex@miami.edu` does not exist in the database. Demo credentials: `alex@miami.edu` / `dialed123`.
-
-## Architecture
-
-Monorepo. `client/` is a Vite + React 18 + TypeScript PWA. `server/` is Express + SQLite. They are entirely separate npm workspaces — never import across the boundary at the module level.
+Three separate workspaces that share nothing at the module level:
 
 ```
 /
-├── client/                  Vite + React 18 + TypeScript + Tailwind + Framer Motion
-│   └── src/
-│       ├── App.tsx          Router, AuthProvider, JarvisGreeting mount point
-│       ├── types.ts         All shared TypeScript interfaces (single source of truth)
-│       ├── lib/
-│       │   ├── api.ts       All fetch calls, grouped by domain (authApi, contactsApi, …)
-│       │   ├── utils.ts     computeStatus, computeOpportunityState, starToCadence, helpers
-│       │   └── escalation.ts  Client-side escalation intensity labels for Tracker/Notifications
-│       ├── hooks/
-│       │   └── useAuth.tsx  AuthContext + provider — wraps entire app in App.tsx
-│       ├── components/
-│       │   ├── BottomNav.tsx          5-tab nav: Home|Orbit|Opps|Tracker|Settings
-│       │   ├── JarvisGreeting.tsx     2.6s intro overlay, plays once per page load
-│       │   ├── NotificationSheet.tsx  Bottom sheet for alerts (accessed via bell on Home)
-│       │   ├── AddContactModal.tsx    Bottom sheet for adding contacts
-│       │   ├── DraftModal.tsx         AI draft modal (follow-up OR reply mode)
-│       │   └── ui/                    Avatar, SectionLabel, StatusBadge, Stars
-│       └── pages/
-│           ├── Home.tsx               Summary strip, pending-response section, contact cards
-│           ├── Orbit.tsx              Searchable/filterable contact list
-│           ├── ContactDetail.tsx      Core loop screen — emails, history, We talked, Draft
-│           ├── Opportunities.tsx      Deadline tracker
-│           ├── Tracker.tsx            Orbit health, streak, top-3, heatmap, response rate
-│           ├── Notifications.tsx      Full-page notifications (route kept, not in nav)
-│           └── Settings.tsx           Gmail, cadence defaults, notification toggles
-└── server/
-    └── src/
-        ├── index.js            Express setup, registers all routes, starts escalation
-        ├── db/
-        │   ├── schema.sql      Canonical table definitions (CREATE TABLE IF NOT EXISTS)
-        │   ├── database.js     Opens DB, runs schema, runs column migrations, exports db
-        │   └── seed.js         Demo data for alex@miami.edu — skips if user exists
-        ├── middleware/
-        │   └── auth.js         JWT cookie verification → req.userId
-        ├── routes/
-        │   ├── auth.js         login, register, logout, me
-        │   ├── contacts.js     CRUD + /talked + /pending-responses + /suggestions
-        │   ├── opportunities.js
-        │   ├── notifications.js  read-all registered BEFORE /:id/read (order matters)
-        │   ├── gmail.js         Simulated Gmail; POST /sync triggers gmailSync
-        │   ├── draft.js         POST /draft — calls Anthropic claude-sonnet-4-6
-        │   ├── pendingResponses.js  PUT /:id/dismiss and /:id/responded
-        │   └── tracker.js       GET /tracker — all Tracker screen stats in one query
-        └── services/
-            ├── escalation.js    runEscalation + runResponseEscalation, called hourly
-            └── gmailSync.js     detectPendingResponses — scans threads for unanswered inbound
+├── client/     Vite + React 18 + TypeScript PWA (web — largely feature-frozen)
+├── server/     Express + SQLite (web backend + AI content API for mobile)
+└── mobile/     Expo SDK 54 + React Native + TypeScript (primary target)
 ```
 
-## Key patterns and constraints
+---
 
-### Status computation (duplicated intentionally)
-`computeStatus(lastContactDate, cadenceDays)` exists in **both** `server/src/routes/contacts.js` and `client/src/lib/utils.ts`. The server computes status for every contacts API response. The client version is available for local use (Tracker, Orbit filters). Keep them in sync if the formula changes.
+## Commands
 
-Contact status thresholds:
+### Root (web dev)
+```bash
+npm run dev          # runs client + server concurrently
+npm run install:all  # installs root + client + server
+```
+
+### Server
+```bash
+cd server && npm run dev          # nodemon, port 3001
+```
+Reset the SQLite database (forces re-seed on next start):
+```bash
+rm server/data/dialed.db
+```
+Demo credentials: `alex@miami.edu` / `dialed123` — seed runs automatically when this user doesn't exist.
+
+### Client (web)
+```bash
+cd client && npm run dev          # Vite HMR, port 5173
+cd client && npx tsc --noEmit     # TypeScript check
+cd client && npm run build        # outputs to client/dist/
+```
+
+### Mobile (Expo)
+```bash
+cd mobile && npx expo start               # LAN QR code for Expo Go
+cd mobile && npx expo start --tunnel      # tunnel mode (different WiFi / behind NAT)
+cd mobile && npm run lint                 # expo lint
+```
+Requires `mobile/.env` with `EXPO_PUBLIC_API_URL=http://<LAN_IP>:3001` pointing to the Express server for AI content features. Supabase credentials are hardcoded in `mobile/src/lib/supabase.ts`.
+
+---
+
+## Mobile architecture (primary)
+
+**Routing**: expo-router with file-based routes under `mobile/src/app/`. Tabs live in `(tabs)/`. Learn topic pages are under `learn/`.
+
+**Data layer** (`mobile/src/lib/db.ts`): wraps Supabase with stale-while-revalidate caching (`withCache` in `mobile/src/lib/cache.ts`). Cache TTL is 5 minutes, keyed in AsyncStorage under `dialed_cache:`. After every mutation, call `clearCache(key)` so the next read fetches fresh data. The mobile app reads/writes CRM data through Supabase directly — it only calls the Express server for AI content endpoints.
+
+**Two-sided home**: `home.tsx` has a `learnMode` state (persisted as `dialed_home_mode`) that toggles between `<LearnHome>` (Learn side) and the existing orbit/CRM view (Maintain side) via `<ModeToggle>`.
+
+**Learn side** (`mobile/src/components/LearnHome.tsx`): 6 topic cards navigate via `router.push('/learn/<topic-id>')` to full-screen pages under `mobile/src/app/learn/`. Each topic page is self-contained and uses three shared components:
+- `TopicPageHeader` — back button + title + progress bar
+- `ChallengeSection` — checkboxes that persist via `mobile/src/lib/learnProgress.ts`
+- `StreakBanner` — flame pill + 7-day dot strip, updated when any challenge is checked
+
+**Learn progress + streak** (`mobile/src/lib/learnProgress.ts`): key AsyncStorage entries:
+- `dialed_learn_progress_<topic>` — `{ completedChallenges: string[], featuresUsed: string[] }`
+- `dialed_learn_streak` — `{ count, lastDate, history[] }` — `recordActivityToday()` is called from `ChallengeSection` on every check
+- `dialed_archived_contacts` — `number[]` of contact IDs hidden from Orbit (UI-level, not deleted from Supabase)
+- `dialed_company_pipeline` — Career Exposure company list with statuses and AI plans
+- `dialed_book_tracker` — Authority & Mentors book statuses (`Want to Read | Reading | Completed`)
+- `dialed_resume_draft` — last generated resume text
+
+**AI content** flows through the Express server so the Anthropic API key stays server-side. Mobile calls `EXPO_PUBLIC_API_URL/api/content/*`. `outfit-check` uses `claude-sonnet-4-6` (vision required). All other content endpoints use `claude-haiku-4-5-20251001`.
+
+**Theming** (`mobile/src/hooks/ThemeContext.tsx`): current default is `'cal'` (Cal AI warm off-white). Toggle cycles `cal → dark → cal`. Every screen calls `const c = useColors()` and passes `c` into a local `makeStyles(c)` — never hardcode color strings in StyleSheet. To revert to dark: change `useState<ThemeMode>('cal')` to `'dark'`. To revert display font to Cormorant Garamond: update `FontFamily.display` in `mobile/src/constants/theme.ts`.
+
+Color palettes are in `mobile/src/constants/theme.ts`: `DarkColors`, `LightColors`, `CalColors`. Semantic tokens: `background`, `surface`, `border`, `elevated`, `primary`, `secondary`, `tertiary`, `gold`, `overdue`, `warning`, `success`, `subtleBorder`.
+
+**Swipeable contacts** (Orbit): uses `Swipeable` from `react-native-gesture-handler` with `renderLeftActions` (swipe right reveals Archive + Delete). The screen root is wrapped in `GestureHandlerRootView`.
+
+---
+
+## Web architecture (secondary)
+
+**Client** (`client/`): Vite + React 18 + TypeScript + Tailwind + Framer Motion PWA. All TypeScript interfaces in `client/src/types.ts`. Single `req<T>()` fetch helper in `client/src/lib/api.ts`; named domain groups: `authApi`, `contactsApi`, `oppsApi`, `notifApi`, `gmailApi`, `draftApi`, `pendingApi`. Tracker page uses raw `fetch` directly — only exception.
+
+**Auth**: JWT in `httpOnly` cookie. Server middleware `auth.js` → `req.userId`. Client uses `credentials: 'include'`. `useAuth` hook calls `GET /api/auth/me` on mount; loading state blocks render.
+
+**Status computation** is duplicated intentionally between `server/src/routes/contacts.js` and `client/src/lib/utils.ts`. Keep them in sync:
 - `overdue`: `daysSince > cadenceDays`
 - `due-soon`: `daysSince > cadenceDays - 3`
-- `good`: everything else
+- Star → cadence: `{ 5→5d, 4→10d, 3→14d, 2→21d, 1→30d }`
 
-Star → cadence mapping (also duplicated, also intentional): `{ 5→5d, 4→10d, 3→14d, 2→21d, 1→30d }`
+**Database migrations**: new tables via `CREATE TABLE IF NOT EXISTS` in `schema.sql`. New columns use `addCol()` in `database.js` (try/catch ALTER TABLE, silently no-ops if column exists). Never drop columns or change types.
 
-### Database migrations
-`schema.sql` handles new tables via `CREATE TABLE IF NOT EXISTS`. New **columns** on existing tables go in `database.js` using `addCol()` — a try/catch ALTER TABLE that silently no-ops if the column exists. Never alter existing column types or drop columns.
+**Route ordering gotcha**: in `notifications.js`, `PUT /read-all` must be registered before `PUT /:id/read`. Same pattern in `contacts.js`: `/pending-responses` and `/suggestions` before `/:id`.
 
-### Route ordering gotcha
-In `notifications.js`, `PUT /read-all` must be registered **before** `PUT /:id/read` — otherwise Express matches `"read-all"` as the `:id` parameter. The same ordering care applies in `contacts.js` where `/pending-responses` and `/suggestions` come before `/:id`.
+**Escalation engine**: `startEscalationEngine()` runs `runEscalation()` + `runResponseEscalation()` at startup and every hour. Deduplicates by checking for existing notifications with the same `type`/`contact_id`/`opportunity_id` within a time window.
 
-### Auth flow
-JWT stored in `httpOnly` cookie. All server routes use `authenticate` middleware (`req.userId`). All client fetch calls use `credentials: 'include'`. The `useAuth` hook calls `GET /api/auth/me` on mount; loading state prevents flash of login screen.
+**Framer Motion**: `layoutId="dialed-wordmark"` FLIPs the wordmark from `JarvisGreeting` → `Home`. `AnimatePresence mode="wait"` drives page transitions keyed on `location.pathname.split('/')[1] || 'home'`. Animate `transform`/`opacity` only — never layout properties.
 
-### AI draft — two modes
-`POST /api/draft` accepts `{ contactId, pendingResponseId? }`. When `pendingResponseId` is provided, the server fetches the email thread and uses a reply-specific system prompt ("reply to an email you received") instead of the default cold follow-up prompt. The `DraftModal` component takes an optional `pendingResponseId` prop that propagates this distinction.
+**Web Tailwind tokens**: `background` (#141318) · `surface` (#1E1C24) · `border` (#2C2A34) · `elevated` (#252330) · `primary` (#F2EDE8) · `secondary` (#8A8490) · `tertiary` (#5A5760) · `gold` (#C9A84C) · `overdue` (#E05252) · `warning` (#D4852A) · `success` (#5BA882). Fonts: `font-display` (Cormorant Garamond) for names/titles/counters; `font-sans` (DM Sans) for everything else.
 
-### Awaiting-reply feature
-Triggered by `POST /api/gmail/sync`. `gmailSync.detectPendingResponses` scans `email_threads` for each gmail-connected contact: if the most recent email is `is_from_user = 0` and no later email is `is_from_user = 1`, a `pending_responses` record is created. `PUT /api/contacts/:id/talked` auto-resolves any pending responses for that contact server-side. The `JarvisGreeting` and Home screen summary strip both consume `GET /api/contacts/pending-responses`.
+---
 
-### Escalation engine
-`startEscalationEngine()` in `index.js` calls both `runEscalation()` (cadence + opportunity deadline notifications) and `runResponseEscalation()` (pending-response nudges) once at startup, then every hour. Notifications are deduplicated by checking for recent notifications with the same `type`/`contact_id`/`opportunity_id` within a time window before inserting.
-
-### Framer Motion patterns
-- `layoutId="dialed-wordmark"` on the `<motion.h1>` in both `JarvisGreeting.tsx` and `Home.tsx` — Framer Motion FLIPs the wordmark from centered to top-left when the greeting unmounts.
-- `AnimatePresence mode="wait"` in `App.tsx` drives page transitions. Key is `location.pathname.split('/')[1] || 'home'` so `/contact/1` and `/contact/2` share a transition key.
-- All animations use `transform` and `opacity` only. Never animate `height`, `width`, or other layout properties.
-
-### API client (`client/src/lib/api.ts`)
-Single `req<T>()` helper wraps all fetch calls. All domain groups (`authApi`, `contactsApi`, `oppsApi`, `notifApi`, `gmailApi`, `draftApi`, `pendingApi`) are named exports. The Tracker page uses raw `fetch` directly because it has its own loading logic — this is the only exception.
-
-### Tailwind color tokens
-Full list: `background` (#141318) · `surface` (#1E1C24) · `border` (#2C2A34) · `elevated` (#252330) · `primary` (#F2EDE8) · `secondary` (#8A8490) · `tertiary` (#5A5760) · `gold` (#C9A84C) · `overdue` (#E05252) · `warning` (#D4852A) · `success` (#5BA882) · `neutral` (#5A5760)
-
-Font rules: `font-display` (Cormorant Garamond) for names, titles, day counters, wordmark. `font-sans` (DM Sans) for everything else. Never swap these.
-
-## Full API surface
+## Full API surface (Express server)
 
 ```
 POST /api/auth/login|register|logout    GET  /api/auth/me
@@ -143,4 +120,6 @@ PUT           /api/notifications/:id/read              DELETE /api/notifications
 GET           /api/gmail/status|recent  POST           /api/gmail/sync
 POST          /api/draft
 GET           /api/tracker
+POST          /api/content/challenge|article|outfit-check|resume-copy
+POST          /api/content/company-plan|venue-suggestions|books|linkedin-audit
 ```

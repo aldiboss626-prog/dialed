@@ -65,8 +65,8 @@ export const gmailApi = {
 
 // AI Draft
 export const draftApi = {
-  generate: (contactId: number, pendingResponseId?: number) =>
-    req<{ draft: string }>('/api/draft', { method: 'POST', body: JSON.stringify({ contactId, pendingResponseId }) }),
+  generate: (contactId: number, pendingResponseId?: number, emailContent?: string, emailImage?: string) =>
+    req<{ draft: string }>('/api/draft', { method: 'POST', body: JSON.stringify({ contactId, pendingResponseId, emailContent, emailImage }) }),
 }
 
 // Pending Responses (Awaiting Reply feature)

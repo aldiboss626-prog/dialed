@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import { Stars } from '../components/ui/Stars'
 import { Avatar } from '../components/ui/Avatar'
+import { ArcProgress } from '../components/ui/ArcProgress'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
@@ -56,34 +57,43 @@ function OrbitHealthCard({ data }: { data: TrackerData }) {
   const score = useCountUp(data.orbitScore, 100)
   const { label, color } = scoreLabel(data.orbitScore)
   const sc = scoreColor(data.orbitScore)
+  const arcSize = 148
 
   return (
     <motion.div
-      className="rounded-xl p-5 mb-5 border border-border border-l-4"
-      style={{ background: '#1E1C24', borderLeftColor: '#C9A84C' }}
+      className="rounded-[20px] p-6 mb-7"
+      style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.1 }}
     >
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="section-label mb-1">Orbit Health</p>
-          <span
-            className="font-display font-bold tabular-nums"
-            style={{ fontSize: 64, color: sc, lineHeight: 1 }}
-          >
-            {score}
-          </span>
+      <p className="section-label mb-4 text-center">Orbit Health</p>
+
+      {/* Hero arc + score */}
+      <div className="flex justify-center mb-5">
+        <div className="relative flex items-center justify-center" style={{ width: arcSize, height: arcSize }}>
+          <ArcProgress size={arcSize} progress={data.orbitScore / 100} color={sc} strokeWidth={3.5} />
+          <div className="text-center z-10">
+            <span className="font-display font-bold tabular-nums block" style={{ fontSize: 80, color: sc, lineHeight: 1 }}>
+              {score}
+            </span>
+            <p className="font-sans font-medium mt-1" style={{ fontSize: 14, color }}>{label}</p>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="font-sans font-medium" style={{ fontSize: 18, color }}>{label}</p>
-          <p className="font-sans text-tertiary mt-2" style={{ fontSize: 12 }}>
-            {data.scoreBreakdown.overdue} overdue · {data.scoreBreakdown.dueSoon} due soon · {data.scoreBreakdown.awaiting} awaiting
-          </p>
-          <p className="font-sans text-tertiary mt-0.5" style={{ fontSize: 11 }}>
-            +{data.scoreBreakdown.recentInteractions} touchpoints this week
-          </p>
-        </div>
+      </div>
+
+      {/* 3-col mini strip */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { value: String(data.scoreBreakdown.overdue), label: 'overdue', color: '#E05252' },
+          { value: String(data.scoreBreakdown.dueSoon), label: 'due soon', color: '#D4852A' },
+          { value: String(data.scoreBreakdown.awaiting), label: 'awaiting', color: '#D4852A' },
+        ].map(stat => (
+          <div key={stat.label} className="rounded-[14px] p-3 text-center" style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <p className="font-display font-bold tabular-nums" style={{ fontSize: 22, color: stat.color, lineHeight: 1 }}>{stat.value}</p>
+            <p className="section-label mt-1">{stat.label}</p>
+          </div>
+        ))}
       </div>
     </motion.div>
   )
@@ -96,8 +106,8 @@ function StreakCard({ data }: { data: TrackerData }) {
 
   return (
     <motion.div
-      className="rounded-xl p-5 mb-5 border border-border text-center"
-      style={{ background: '#1E1C24' }}
+      className="rounded-[20px] p-6 mb-7 text-center"
+      style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.15 }}
@@ -105,7 +115,7 @@ function StreakCard({ data }: { data: TrackerData }) {
       <SectionLabel className="mb-3">Current Streak</SectionLabel>
       <span
         className="font-display font-bold tabular-nums block"
-        style={{ fontSize: 48, color: data.streakCount > 0 ? '#C9A84C' : '#5A5760', lineHeight: 1 }}
+        style={{ fontSize: 64, color: data.streakCount > 0 ? '#C9A84C' : '#5A5760', lineHeight: 1 }}
       >
         {streak}
       </span>
@@ -134,8 +144,8 @@ function TopRelCard({ rel, rank, index }: { rel: TrackerData['topRelationships']
 
   return (
     <motion.div
-      className="rounded-xl p-4 mb-3 border border-border border-l-4 cursor-pointer"
-      style={{ background: '#1E1C24', borderLeftColor: c.borderColor }}
+      className="rounded-[18px] p-4 mb-3 cursor-pointer"
+      style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.2 + index * 0.07 }}
@@ -202,8 +212,8 @@ function ActivityHeatmap({ data }: { data: TrackerData }) {
     >
       <SectionLabel className="mb-3">Your Activity</SectionLabel>
       <div
-        className="rounded-xl border border-border p-4"
-        style={{ background: '#1E1C24' }}
+        className="rounded-[18px] p-4"
+        style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div
           className="grid gap-1.5"
@@ -238,8 +248,7 @@ function MostNeglected({ data }: { data: TrackerData }) {
       {data.mostNeglected.map((c, i) => (
         <motion.div
           key={c.id}
-          className="flex items-center gap-3 py-3 border-b border-border border-l-[3px] pl-3 cursor-pointer"
-          style={{ borderLeftColor: '#E05252' }}
+          className="flex items-center gap-3 py-3 border-b border-border cursor-pointer"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.35 + i * 0.06 }}
@@ -272,8 +281,8 @@ function ResponseRate({ data }: { data: TrackerData }) {
 
   return (
     <motion.div
-      className="mb-5 rounded-xl border border-border p-4"
-      style={{ background: '#1E1C24' }}
+      className="mb-7 rounded-[20px] p-6"
+      style={{ background: '#1E1C24', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.04)' }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ delay: 0.4 }}
@@ -282,7 +291,7 @@ function ResponseRate({ data }: { data: TrackerData }) {
       <div className="flex items-center justify-between">
         <div>
           <p className="section-label mb-1">Replied within 24h</p>
-          <span className="font-display font-bold tabular-nums" style={{ fontSize: 36, color: pctColor }}>
+          <span className="font-display font-bold tabular-nums" style={{ fontSize: 52, color: pctColor }}>
             {pct}%
           </span>
           <p className="font-sans text-tertiary mt-1" style={{ fontSize: 12 }}>
