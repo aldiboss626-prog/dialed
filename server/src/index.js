@@ -16,6 +16,7 @@ const draftRoutes = require('./routes/draft');
 const pendingResponsesRoutes = require('./routes/pendingResponses');
 const trackerRoutes = require('./routes/tracker');
 const contentRoutes = require('./routes/content');
+const webhooksRoutes = require('./routes/webhooks');
 const { startEscalationEngine } = require('./services/escalation');
 
 const app = express();
@@ -25,7 +26,7 @@ app.use(cors({
   origin: (origin, cb) => cb(null, true), // allow all origins (dev only — tighten for production)
   credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({ limit: '12mb' })); // large enough for base64 screenshot uploads
 app.use(cookieParser());
 
 app.use('/api/auth', authRoutes);
@@ -37,6 +38,7 @@ app.use('/api', draftRoutes);
 app.use('/api/pending-responses', pendingResponsesRoutes);
 app.use('/api/tracker', trackerRoutes);
 app.use('/api/content', contentRoutes);
+app.use('/api/webhooks', webhooksRoutes);
 
 startEscalationEngine();
 

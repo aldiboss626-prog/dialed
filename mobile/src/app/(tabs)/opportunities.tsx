@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useTabBarPadding } from '@/components/FloatingTabBar'
+import { HeaderBell } from '@/components/HeaderBell'
 import { JoySlide } from '@/components/JoySlide'
 import { DatePicker } from '@/components/DatePicker'
 import { ContactAvatar } from '@/components/ContactAvatar'
@@ -44,10 +45,13 @@ function formatDeadline(d: string | null) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 function deterministicHistory(current: number, periods: number, seed: number): number[] {
-  const start = Math.max(5, current - 35)
+  if (current <= 2) return Array(periods).fill(0)
+  if (current >= 98) return Array(periods).fill(current)
+  const start = Math.max(0, current - 35)
+  const maxNoise = Math.max(1, Math.min(5, current * 0.06, (100 - current) * 0.06))
   return Array.from({ length: periods }, (_, i) => {
     const t = i / Math.max(periods - 1, 1)
-    const noise = ((i * seed + i * 3 + 11) % 11) - 5
+    const noise = ((i * seed + i * 3 + 11) % (maxNoise * 2 + 1)) - maxNoise
     return Math.max(0, Math.min(100, Math.round(start + (current - start) * t + noise)))
   })
 }
@@ -194,8 +198,9 @@ function OppScoreCard({ opps, onFilter }: { opps: Opportunity[]; onFilter?: (f: 
   const upcoming  = opps.filter(o => o.state === 'upcoming').length
   const overdue   = opps.filter(o => o.state === 'overdue').length
   const completed = opps.filter(o => o.state === 'completed').length
+  const missed    = opps.filter(o => o.status === 'Missed').length
 
-  const score = Math.max(0, Math.min(100, 100 - overdue * 20 - upcoming * 5))
+  const score = Math.max(0, Math.min(100, 100 - overdue * 20 - missed * 15 - upcoming * 5))
   const sColor = oppScoreColor(score, c)
   const sLabel = oppScoreLabel(score)
   const history = deterministicHistory(score, 6, opps.length + 11)
@@ -583,6 +588,157 @@ function OppFormModal({ visible, contacts, initial, isEdit, onSubmit, onClose }:
   )
 }
 
+// ── Job Matches Demo ─────────────────────────────────────────────────────────
+// Static preview of the job matching feature — no real API yet.
+
+const MOCK_MATCHES = [
+  {
+    company: 'Google',
+    role: 'Product Manager, Growth',
+    posted: '2 days ago',
+    contact: { name: 'Marcus Reid', type: 'Recruiter', initials: 'MR', color: '#3B6FE8' },
+    tag: 'New',
+    tagColor: '#22C55E',
+  },
+  {
+    company: 'JPMorgan Chase',
+    role: 'Summer Analyst – Investment Banking',
+    posted: '1 day ago',
+    contact: { name: 'Dr. Ayesha Okonkwo', type: 'Mentor', initials: 'AO', color: '#F59E0B' },
+    tag: 'Deadline soon',
+    tagColor: '#D4852A',
+  },
+  {
+    company: 'Spotify',
+    role: 'Data Science Intern',
+    posted: 'Today',
+    contact: { name: 'Lena Park', type: 'Friend', initials: 'LP', color: '#22C55E' },
+    tag: 'Just posted',
+    tagColor: '#3B6FE8',
+  },
+]
+
+function JobMatchesDemo() {
+  const c = useColors()
+  const [dismissed, setDismissed] = useState(false)
+  if (dismissed) return null
+
+  return (
+    <View style={{
+      backgroundColor: c.surface, borderRadius: Radius.card,
+      marginHorizontal: 16, marginBottom: 14, padding: 16,
+      borderWidth: 1, borderColor: c.subtleBorder,
+    }}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontFamily: FontFamily.display, fontSize: 18, color: c.primary }}>Job Matches</Text>
+          <View style={{
+            backgroundColor: '#2563EB' + '18', borderRadius: Radius.full,
+            paddingHorizontal: 8, paddingVertical: 3,
+            borderWidth: 1, borderColor: '#2563EB' + '33',
+          }}>
+            <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 9, color: '#2563EB', letterSpacing: 1.2 }}>PREVIEW</Text>
+          </View>
+        </View>
+        <TouchableOpacity onPress={() => setDismissed(true)} activeOpacity={0.7}>
+          <Ionicons name="close" size={16} color={c.tertiary} />
+        </TouchableOpacity>
+      </View>
+      <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary, marginBottom: 14 }}>
+        Jobs at companies where your contacts work
+      </Text>
+
+      {MOCK_MATCHES.map((m, i) => (
+        <View key={i} style={{
+          flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+          paddingVertical: 12,
+          borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border,
+        }}>
+          {/* Company logo */}
+          <View style={{
+            width: 44, height: 44, borderRadius: 12,
+            backgroundColor: logoColor(m.company) + '20',
+            borderWidth: 1, borderColor: logoColor(m.company) + '40',
+            alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <Text style={{ fontFamily: FontFamily.display, fontSize: 20, color: logoColor(m.company) }}>
+              {m.company[0]}
+            </Text>
+          </View>
+
+          {/* Job info */}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              <Text style={{ fontFamily: FontFamily.display, fontSize: 14, color: c.primary, flex: 1 }} numberOfLines={1}>
+                {m.role}
+              </Text>
+            </View>
+            <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary, marginBottom: 6 }}>
+              {m.company} · {m.posted}
+            </Text>
+
+            {/* Tag */}
+            <View style={{
+              alignSelf: 'flex-start', backgroundColor: m.tagColor + '18',
+              borderRadius: Radius.full, paddingHorizontal: 8, paddingVertical: 2,
+              borderWidth: 1, borderColor: m.tagColor + '40', marginBottom: 8,
+            }}>
+              <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 10, color: m.tagColor }}>{m.tag}</Text>
+            </View>
+
+            {/* Contact row + CTA */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{
+                  width: 22, height: 22, borderRadius: 11,
+                  backgroundColor: m.contact.color + '22',
+                  borderWidth: 1, borderColor: m.contact.color + '44',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 8, color: m.contact.color }}>
+                    {m.contact.initials}
+                  </Text>
+                </View>
+                <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary }}>
+                  {m.contact.name}
+                </Text>
+                <View style={{
+                  backgroundColor: c.elevated, borderRadius: Radius.full,
+                  paddingHorizontal: 6, paddingVertical: 2,
+                }}>
+                  <Text style={{ fontFamily: FontFamily.sans, fontSize: 10, color: c.tertiary }}>{m.contact.type}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#2563EB' + '14', borderRadius: Radius.full,
+                  paddingHorizontal: 10, paddingVertical: 5,
+                  borderWidth: 1, borderColor: '#2563EB' + '33',
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 11, color: '#2563EB' }}>Ask them</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ))}
+
+      {/* Bottom note */}
+      <View style={{
+        marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: c.border,
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+      }}>
+        <Ionicons name="information-circle-outline" size={13} color={c.tertiary} />
+        <Text style={{ fontFamily: FontFamily.sans, fontSize: 11, color: c.tertiary, flex: 1 }}>
+          This is a preview. Real job matching pulls live listings from your contacts' companies.
+        </Text>
+      </View>
+    </View>
+  )
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function OpportunitiesScreen() {
@@ -687,7 +843,7 @@ export default function OpportunitiesScreen() {
 
   const CHIPS: { key: Filter; label: string; count: number }[] = [
     { key: 'all',       label: 'All',       count: opps.length },
-    { key: 'active',    label: 'Active',    count: activeOpps.length + upcomingOpps.length },
+    { key: 'active',    label: 'Active',    count: activeOpps.length },
     { key: 'upcoming',  label: 'Upcoming',  count: upcomingOpps.length },
     { key: 'overdue',   label: 'Overdue',   count: overdueOpps.length },
     { key: 'completed', label: 'Completed', count: completedOpps.length },
@@ -707,9 +863,12 @@ export default function OpportunitiesScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Opportunities</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setAddOpen(true)} activeOpacity={0.85}>
-          <Ionicons name="add" size={20} color="#fff" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <HeaderBell />
+          <TouchableOpacity style={styles.addBtn} onPress={() => setAddOpen(true)} activeOpacity={0.85}>
+            <Ionicons name="add" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Filter chips */}
@@ -735,6 +894,7 @@ export default function OpportunitiesScreen() {
             // ── Dashboard view ────────────────────────────────────────────
             <>
               <OppScoreCard opps={opps} onFilter={setFilter} />
+              <JobMatchesDemo />
               <SuggestedSection opps={opps} contacts={contacts} onSeeAll={() => setFilter('overdue')} />
               <UpcomingDeadlinesSection opps={opps} onSeeAll={() => setFilter('upcoming')} />
               {opps.length === 0 && <Text style={styles.empty}>Add your first opportunity to get started.</Text>}

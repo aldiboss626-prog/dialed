@@ -7,7 +7,8 @@ import type { Contact, Opportunity, Notification, PendingResponse, Group, Tag } 
 const STAR_TO_CADENCE: Record<number, number> = { 5: 5, 4: 10, 3: 14, 2: 21, 1: 30 }
 
 function computeContact(raw: any): Contact {
-  const cadence_days = STAR_TO_CADENCE[raw.stars] ?? 14
+  // Prefer the value stored in the DB (custom cadence); fall back to star default only if absent
+  const cadence_days = raw.cadence_days ?? STAR_TO_CADENCE[raw.stars] ?? 14
   const days_since_contact = Math.floor(
     (Date.now() - new Date(raw.last_contact_date).getTime()) / 86_400_000,
   )
@@ -255,7 +256,7 @@ export const pendingDb = {
     return withCache('pending', async () => {
       const { data, error } = await supabase
         .from('pending_responses')
-        .select('*, contact:contacts(id,name,stars,role), email_thread:email_threads(subject,date,preview)')
+        .select('*, contact:contacts(id,name,stars,role,relationship_type), email_thread:email_threads(subject,date,preview,body)')
         .eq('status', 'pending')
         .order('detected_at', { ascending: false })
       if (error) throw new Error(error.message)
@@ -264,6 +265,7 @@ export const pendingDb = {
         email_subject: (pr.email_thread as any)?.subject ?? '(no subject)',
         email_date: (pr.email_thread as any)?.date ?? pr.detected_at,
         email_preview: (pr.email_thread as any)?.preview ?? null,
+        email_body: (pr.email_thread as any)?.body ?? null,
       })) as PendingResponse[]
     }, onUpdate)
   },

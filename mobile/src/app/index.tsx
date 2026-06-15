@@ -7,5 +7,5 @@ export default function Index() {
   const { user, loading } = useAuth()
   const c = useColors()
   if (loading) return <View style={{ flex: 1, backgroundColor: c.background }} />
-  return <Redirect href={user ? '/(tabs)/home' : '/login'} />
+  return <Redirect href={user ? '/(tabs)/home' : '/landing'} />
 }

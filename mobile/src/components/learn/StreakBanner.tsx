@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { View, Text, StyleSheet } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { FontFamily, Radius, Spacing } from '@/constants/theme'
 import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
@@ -24,7 +25,6 @@ function makeStyles(c: ColorPalette) {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       marginHorizontal: Spacing.lg, marginBottom: 16,
     },
-    // Left pill — matches Cal AI's 🔥 N badge
     pill: {
       flexDirection: 'row', alignItems: 'center', gap: 6,
       backgroundColor: c.surface,
@@ -33,10 +33,8 @@ function makeStyles(c: ColorPalette) {
       shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8,
       shadowOffset: { width: 0, height: 2 }, elevation: 2,
     },
-    flame: { fontSize: 18 },
     count: { fontFamily: 'DMSans-Bold', fontSize: 20, color: c.primary, lineHeight: 24 },
     countLabel: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary },
-    // Right — 7-day dot strip
     dotsWrap: {
       flexDirection: 'row', alignItems: 'flex-end', gap: 5,
       backgroundColor: c.surface,
@@ -69,14 +67,12 @@ export function StreakBanner() {
 
   return (
     <View style={styles.row}>
-      {/* Streak pill — like Cal AI's top-right badge but full-label */}
       <View style={styles.pill}>
-        <Text style={styles.flame}>🔥</Text>
+        <Ionicons name="flame" size={18} color={c.gold} />
         <Text style={styles.count}>{streak}</Text>
         <Text style={styles.countLabel}>day streak</Text>
       </View>
 
-      {/* 7-day dot strip */}
       <View style={styles.dotsWrap}>
         {days.map(day => {
           const active = history.includes(day)
@@ -86,12 +82,12 @@ export function StreakBanner() {
               <View style={[
                 styles.dot,
                 {
-                  backgroundColor: active ? '#F97316' : c.elevated,
+                  backgroundColor: active ? c.gold : c.elevated,
                   borderWidth: isToday && !active ? 1.5 : 0,
-                  borderColor: '#F97316',
+                  borderColor: c.gold,
                 },
               ]} />
-              <Text style={[styles.dotLabel, isToday && { color: '#F97316', fontFamily: FontFamily.sansMedium }]}>
+              <Text style={[styles.dotLabel, isToday && { color: c.gold, fontFamily: FontFamily.sansMedium }]}>
                 {dayLabel(day)}
               </Text>
             </View>

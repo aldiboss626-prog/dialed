@@ -1,39 +1,51 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, ActivityIndicator, Animated, Easing as RNEasing,
+  View, Text, ScrollView, TouchableOpacity,
+  RefreshControl, ActivityIndicator, Animated, useWindowDimensions, PanResponder,
 } from 'react-native'
-import ReAnimated, { FadeInDown, FadeOutUp } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import Svg, { Circle as SvgCircle, Text as SvgText, Line } from 'react-native-svg'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { contactsDb, oppsDb, pendingDb, notifDb, getTrackerData } from '@/lib/db'
+import { BlurView } from 'expo-blur'
+import { contactsDb, oppsDb, pendingDb, notifDb } from '@/lib/db'
 import { WelcomeOverlay } from '@/components/WelcomeOverlay'
-import { TITLE_PREF_KEY } from '@/app/(tabs)/settings'
-import { FontFamily, Radius } from '@/constants/theme'
-import { useColors } from '@/hooks/use-theme'
+import { TITLE_PREF_KEY } from '@/app/settings'
+import { FontFamily } from '@/constants/theme'
+import { useColors, useThemeMode } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
-import { StatusBadge } from '@/components/StatusBadge'
-import { Stars } from '@/components/Stars'
 import { AddContactModal } from '@/components/AddContactModal'
-import { AnimatedPressable } from '@/components/AnimatedPressable'
-import { useTabBarPadding } from '@/components/FloatingTabBar'
+import { DialWordmark } from '@/components/DialWordmark'
 import { useAuth } from '@/hooks/useAuth'
-import { ModeToggle } from '@/components/ModeToggle'
-import { LearnHome } from '@/components/LearnHome'
+import { ContactAvatar } from '@/components/ContactAvatar'
 import type { Contact, Opportunity, PendingResponse, Notification } from '@/types'
 
-function initials(name: string) {
-  return name.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const PILL_H = 64 // pill bar inner height
+const PILL_BOTTOM_MARGIN = 12
+
+const PRESET_TAG_COLORS: Record<string, string> = {
+  Mentor: '#3B6FE8', Friend: '#22C55E', Recruiter: '#EF4444', Professor: '#F59E0B',
 }
+const CUSTOM_TAG_PALETTE = ['#8B5CF6', '#EC4899', '#06B6D4', '#F97316', '#6366F1', '#14B8A6']
+function typeColor(t?: string | null): string {
+  const tag = t ?? ''
+  if (PRESET_TAG_COLORS[tag]) return PRESET_TAG_COLORS[tag]
+  if (!tag) return '#6B7280'
+  let h = 0
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) & 0xffff
+  return CUSTOM_TAG_PALETTE[h % CUSTOM_TAG_PALETTE.length]
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function greeting() {
   const h = new Date().getHours()
-  if (h < 12) return 'Good morning,'
-  if (h < 17) return 'Good afternoon,'
-  return 'Good evening,'
+  return h < 12 ? 'Good morning,' : h < 17 ? 'Good afternoon,' : 'Good evening,'
 }
 
 function hoursAgo(dateStr: string) {
@@ -41,600 +53,905 @@ function hoursAgo(dateStr: string) {
 }
 
 function pendingTimeLabel(h: number) {
-  if (h < 1) return 'just now'
-  if (h < 24) return `${Math.round(h)}h ago`
-  const d = Math.floor(h / 24)
-  return `${d}${d === 1 ? ' day' : ' days'} ago`
+  if (h < 1) return 'now'
+  if (h < 24) return `${Math.round(h)}h`
+  return `${Math.floor(h / 24)}d`
 }
 
-function pendingTimeColor(c: ColorPalette, h: number) {
+function pendingTimeTint(c: ColorPalette, h: number) {
   if (h < 6) return c.secondary
   if (h < 24) return c.warning
   return c.overdue
 }
 
-function scoreColor(c: ColorPalette, s: number) {
-  if (s >= 80) return c.success
-  if (s >= 60) return c.warning
-  return c.overdue
+function networkScore(contacts: Contact[]) {
+  const overdue = contacts.filter(c => c.status === 'overdue').length
+  const due = contacts.filter(c => c.status === 'due-soon').length
+  return Math.max(8, Math.min(100, Math.round(100 - overdue * 12 - due * 5)))
+}
+
+function scoreColor(score: number) {
+  if (score >= 80) return '#22C55E'
+  if (score >= 60) return '#F59E0B'
+  return '#EF4444'
 }
 
 function scoreLabel(s: number) {
-  if (s >= 90) return 'Excellent'
-  if (s >= 75) return 'Strong'
-  if (s >= 60) return 'Needs Attention'
+  if (s >= 80) return 'Strong'
+  if (s >= 60) return 'Good'
+  if (s >= 35) return 'Needs attention'
   return 'Critical'
 }
 
-function makeStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: c.background },
-    scroll: { flex: 1 },
-    content: { paddingHorizontal: 16, paddingTop: 20 },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 16, paddingTop: 4 },
-    logoRow: { flexDirection: 'row', alignItems: 'flex-end' },
-    logoDark: { fontFamily: FontFamily.display, fontSize: 52, color: c.primary, letterSpacing: 1, lineHeight: 56 },
-    logoBlue: { fontFamily: FontFamily.display, fontSize: 52, color: c.gold, fontStyle: 'italic', letterSpacing: 1, lineHeight: 56 },
-    logoSlashWrap: { position: 'relative' },
-    logoSlash: {
-      position: 'absolute', width: 3, height: 72,
-      backgroundColor: c.surface, top: -8, left: '54%',
-      transform: [{ rotate: '-18deg' }],
-    },
-    headerActions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-    iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-    badge: {
-      position: 'absolute', top: 4, right: 4,
-      backgroundColor: c.gold, borderRadius: 5,
-      width: 10, height: 10,
-    },
-    badgeText: { fontFamily: FontFamily.sans, fontSize: 9, color: '#fff', fontWeight: 'bold' },
-    addBtn: {
-      width: 36, height: 36, borderRadius: 18,
-      backgroundColor: c.gold, alignItems: 'center', justifyContent: 'center',
-    },
-    healthCard: {
-      backgroundColor: c.surface, borderRadius: Radius.card,
-      padding: 18, marginBottom: 20,
-      borderWidth: 1, borderColor: c.subtleBorder,
-    },
-    healthTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-    healthLabel: { fontFamily: FontFamily.sans, fontSize: 11, color: c.tertiary, letterSpacing: 2 },
-    healthScore: { fontFamily: FontFamily.display, fontSize: 28, lineHeight: 36 },
-    healthBarTrack: {
-      height: 6, backgroundColor: c.border, borderRadius: 3, overflow: 'hidden', marginBottom: 6,
-    },
-    healthBarFill: { height: 6, borderRadius: 3, overflow: 'hidden' },
-    healthStatus: { fontFamily: FontFamily.sans, fontSize: 12 },
-    statGrid: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-    statCard: {
-      flex: 1, backgroundColor: c.surface, borderRadius: Radius.card,
-      paddingVertical: 14, alignItems: 'center',
-      borderWidth: 1, borderColor: c.subtleBorder,
-    },
-    statValue: { fontFamily: FontFamily.display, fontSize: 30, lineHeight: 32 },
-    statLabel: { fontFamily: FontFamily.sans, fontSize: 9, color: c.tertiary, letterSpacing: 1.5, marginTop: 2, marginBottom: 6 },
-    greetingBlock: { marginBottom: 28 },
-    greetingText: { fontFamily: FontFamily.sans, fontSize: 16, color: c.secondary },
-    greetingName: { fontFamily: FontFamily.display, fontSize: 36, color: c.primary, lineHeight: 40 },
-    section: { marginBottom: 28 },
-    sectionLabel: { fontFamily: FontFamily.sans, fontSize: 11, color: c.tertiary, letterSpacing: 2.5, marginBottom: 12 },
-    pendingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.border },
-    pendingName: { fontFamily: FontFamily.display, fontSize: 18, color: c.primary },
-    pendingSubject: { fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary, marginTop: 1 },
-    pendingTime: { fontFamily: FontFamily.sans, fontSize: 11, flexShrink: 0 },
-    heroCard: {
-      backgroundColor: c.surface, borderRadius: Radius.card,
-      padding: 16, marginBottom: 12,
-      borderWidth: 1, borderColor: c.subtleBorder,
-    },
-    medCard: {
-      backgroundColor: c.surface, borderRadius: Radius.card,
-      padding: 16, marginBottom: 12,
-      borderWidth: 1, borderColor: c.subtleBorder,
-    },
-    cardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
-    cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-    cardBottom: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-    avatar: {
-      width: 48, height: 48, borderRadius: 12,
-      backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
-    },
-    avatarText: { fontFamily: FontFamily.sans, fontSize: 16, color: c.secondary },
-    heroName: { fontFamily: FontFamily.display, fontSize: 22, color: c.primary, lineHeight: 24 },
-    medName: { fontFamily: FontFamily.display, fontSize: 19, color: c.primary, lineHeight: 22 },
-    cardRole: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginTop: 2 },
-    daysRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-    heroDays: { fontFamily: FontFamily.display, fontSize: 56, lineHeight: 58 },
-    medDays: { fontFamily: FontFamily.display, fontSize: 44, lineHeight: 46 },
-    daysAgo: { fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary },
-    urgentBanner: {
-      marginTop: 12, marginHorizontal: -16, marginBottom: -16,
-      paddingHorizontal: 16, paddingVertical: 8,
-      backgroundColor: c.warning + '18',
-      borderTopWidth: 1, borderTopColor: c.warning + '33',
-      borderBottomLeftRadius: Radius.card, borderBottomRightRadius: Radius.card,
-    },
-    urgentText: { fontFamily: FontFamily.sans, fontSize: 11, color: c.warning },
-    compactRow: {
-      flexDirection: 'row', alignItems: 'center', gap: 12,
-      paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border,
-    },
-    compactAvatar: {
-      width: 36, height: 36, borderRadius: 10,
-      backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
-    },
-    compactAvatarText: { fontFamily: FontFamily.sans, fontSize: 11, color: c.tertiary },
-    compactName: { fontFamily: FontFamily.sans, fontSize: 15, color: c.primary, flex: 1 },
-    compactRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    dot: { width: 6, height: 6, borderRadius: 3 },
-    compactDays: { fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary },
-    emptyText: { fontFamily: FontFamily.sans, fontSize: 14, color: c.tertiary, textAlign: 'center', marginTop: 48 },
-    growCard: {
-      backgroundColor: c.surface, borderRadius: Radius.card,
-      padding: 16, marginTop: 8, marginBottom: 32,
-      flexDirection: 'row', alignItems: 'center', gap: 14,
-      borderWidth: 1, borderColor: c.subtleBorder,
-    },
-    growAvatar: {
-      width: 44, height: 44, borderRadius: 12,
-      backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    },
-    growText: { flex: 1 },
-    growTitle: { fontFamily: FontFamily.display, fontSize: 19, color: c.primary },
-    growSub: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginTop: 3 },
-    activitySection: { marginBottom: 28 },
-    activityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-    viewAllText: { fontFamily: FontFamily.sans, fontSize: 13, color: c.gold },
-    activityRow: {
-      flexDirection: 'row', alignItems: 'center', gap: 12,
-      paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.border,
-    },
-    activityAvatar: {
-      width: 44, height: 44, borderRadius: 22,
-      backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    },
-    activityAvatarText: { fontFamily: FontFamily.sans, fontSize: 15, color: c.secondary },
-    activityName: { fontFamily: FontFamily.display, fontSize: 17, color: c.primary },
-    activityLabel: { fontFamily: FontFamily.sans, fontSize: 13, color: c.gold, marginTop: 2 },
-    activityTime: { fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary, flexShrink: 0 },
-  })
+// ── Dial Gauge (tick-mark style) ──────────────────────────────────────────────
+
+function polar(cx: number, cy: number, r: number, deg: number) {
+  const rad = ((deg - 90) * Math.PI) / 180
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
 }
 
-function StatCard({ label, value, color, icon, onPress }: { label: string; value: number; color: string; icon: string; onPress: () => void }) {
-  const c = useColors()
-  const styles = makeStyles(c)
-  return (
-    <TouchableOpacity style={styles.statCard} onPress={onPress} activeOpacity={0.75}>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Ionicons name={icon as any} size={16} color={color} />
-    </TouchableOpacity>
-  )
-}
+const GAUGE_SIZE = 128
+const GCX = 64, GCY = 64
+const G_BG_R   = 60   // dark background circle
+const G_OUT_R  = 56   // outer tip of tick marks
+const G_IN_R   = 46   // inner base of tick marks
+const G_DOT_R  = G_OUT_R + 2  // indicator dot sits just outside ticks
+const G_TICKS  = 44  // number of tick marks for fine resolution
+const G_START  = 135
+const G_SWEEP  = 270
 
-function NetworkHealthBar({ score }: { score: number }) {
-  const c = useColors()
-  const styles = makeStyles(c)
-  const color = scoreColor(c, score)
+function DialGauge({ score }: { score: number }) {
+  const col   = scoreColor(score)
   const label = scoreLabel(score)
-  const barAnim = useRef(new Animated.Value(0)).current
-  const shakeAnim = useRef(new Animated.Value(0)).current
-  const [containerWidth, setContainerWidth] = useState(0)
-  const [displayScore, setDisplayScore] = useState(0)
+  const nLit  = Math.round(G_TICKS * (score / 100))
 
-  useEffect(() => {
-    if (containerWidth === 0) return
-    const targetWidth = (score / 100) * containerWidth
-
-    const startTime = Date.now()
-    const duration = 1400
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime
-      const t = Math.min(1, elapsed / duration)
-      const eased = 1 - Math.pow(1 - t, 3)
-      setDisplayScore(Math.round(eased * score))
-      if (t >= 1) clearInterval(interval)
-    }, 16)
-
-    barAnim.setValue(0)
-    Animated.timing(barAnim, {
-      toValue: targetWidth,
-      duration: 1400,
-      easing: RNEasing.out(RNEasing.cubic),
-      useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (!finished) return
-      if (score < 60) {
-        Animated.sequence([
-          Animated.timing(shakeAnim, { toValue: 10, duration: 55, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: -10, duration: 55, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: 8, duration: 55, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: -8, duration: 55, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: 4, duration: 55, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: 0, duration: 55, useNativeDriver: true }),
-        ]).start()
-      } else if (score >= 80) {
-        Animated.sequence([
-          Animated.timing(shakeAnim, { toValue: -4, duration: 80, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: 4, duration: 80, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: -2, duration: 60, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
-        ]).start()
-      }
-    })
-
-    return () => clearInterval(interval)
-  }, [score, containerWidth])
+  // Indicator dot at the last lit tick
+  const litEndDeg = G_START + ((Math.max(nLit - 1, 0)) / (G_TICKS - 1)) * G_SWEEP
+  const dot = polar(GCX, GCY, G_DOT_R, litEndDeg)
 
   return (
-    <Animated.View style={[styles.healthCard, { transform: [{ translateX: shakeAnim }] }]}>
-      <View style={styles.healthTop}>
-        <Text style={styles.healthLabel}>NETWORK HEALTH</Text>
-        <Text style={[styles.healthScore, { color }]}>{displayScore}</Text>
-      </View>
-      <View
-        style={styles.healthBarTrack}
-        onLayout={e => setContainerWidth(e.nativeEvent.layout.width)}
-      >
-        <Animated.View style={[styles.healthBarFill, { width: barAnim }]}>
-          <LinearGradient
-            colors={[c.gold, c.success]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{ flex: 1 }}
+    <Svg width={GAUGE_SIZE} height={GAUGE_SIZE} viewBox={`0 0 ${GAUGE_SIZE} ${GAUGE_SIZE}`}>
+      {/* Dark circular background */}
+      <SvgCircle cx={GCX} cy={GCY} r={G_BG_R} fill="#0B1A2C" />
+
+      {/* Tick marks */}
+      {Array.from({ length: G_TICKS }, (_, i) => {
+        const deg   = G_START + (i / (G_TICKS - 1)) * G_SWEEP
+        const inner = polar(GCX, GCY, G_IN_R, deg)
+        const outer = polar(GCX, GCY, G_OUT_R, deg)
+        const lit   = i < nLit
+        return (
+          <Line
+            key={i}
+            x1={inner.x.toFixed(2)} y1={inner.y.toFixed(2)}
+            x2={outer.x.toFixed(2)} y2={outer.y.toFixed(2)}
+            stroke={lit ? col : 'rgba(255,255,255,0.12)'}
+            strokeWidth={lit ? 3 : 2}
+            strokeLinecap="round"
           />
-        </Animated.View>
-      </View>
-      <Text style={[styles.healthStatus, { color }]}>{label}</Text>
-    </Animated.View>
-  )
-}
+        )
+      })}
 
-function HeroCard({ contact, onPress }: { contact: Contact; onPress: () => void }) {
-  const c = useColors()
-  const styles = makeStyles(c)
-  const hasUrgentOpp = contact.linked_opportunity?.deadline &&
-    Math.ceil((new Date(contact.linked_opportunity.deadline).getTime() - Date.now()) / 86_400_000) <= 7
-  return (
-    <AnimatedPressable style={styles.heroCard} onPress={onPress}>
-      <View style={styles.cardTop}>
-        <View style={styles.cardLeft}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials(contact.name)}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroName}>{contact.name}</Text>
-            <Text style={styles.cardRole}>{contact.role}</Text>
-          </View>
-        </View>
-        <StatusBadge status="overdue" />
-      </View>
-      <View style={styles.cardBottom}>
-        <Stars count={contact.stars} size={13} />
-        <View style={styles.daysRow}>
-          <Text style={[styles.heroDays, { color: c.overdue }]}>{contact.days_since_contact}</Text>
-          <Text style={styles.daysAgo}>days ago</Text>
-        </View>
-      </View>
-      {hasUrgentOpp && contact.linked_opportunity && (
-        <View style={styles.urgentBanner}>
-          <Text style={styles.urgentText}>⚡ {contact.linked_opportunity.title} — deadline approaching</Text>
-        </View>
+      {/* Indicator dot */}
+      {nLit > 0 && (
+        <SvgCircle
+          cx={dot.x.toFixed(2)} cy={dot.y.toFixed(2)}
+          r={4} fill={col}
+        />
       )}
-    </AnimatedPressable>
+
+      {/* Score number */}
+      <SvgText
+        x={GCX} y={GCY + 10}
+        textAnchor="middle" fontSize={32} fontWeight="bold"
+        fill="#FFFFFF" fontFamily="DMSans-Bold"
+      >
+        {score}
+      </SvgText>
+
+      {/* Score label */}
+      <SvgText
+        x={GCX} y={GCY + 26}
+        textAnchor="middle" fontSize={9}
+        fill={col} fontFamily="DMSans-Medium" letterSpacing={1.2}
+      >
+        {label.toUpperCase()}
+      </SvgText>
+    </Svg>
   )
 }
 
-function MediumCard({ contact, onPress }: { contact: Contact; onPress: () => void }) {
-  const c = useColors()
-  const styles = makeStyles(c)
-  const dayColor = contact.status === 'overdue' ? c.overdue : c.warning
+// ── HealthHeroCard ────────────────────────────────────────────────────────────
+
+function HealthHeroCard({ score, contacts, pendingCount, onPendingPress }: {
+  score: number; contacts: Contact[]; pendingCount: number; onPendingPress: () => void
+}) {
+  const overdue = contacts.filter(c => c.status === 'overdue').length
+  const dueSoon = contacts.filter(c => c.status === 'due-soon').length
+  const attn = overdue + dueSoon
+
+  // Rotate through dialed-in jokes daily when network is healthy
+  const DIALED_MSGS = [
+    { h: "Don't touch that dial.",       s: "Every contact is warm and accounted for." },
+    { h: "Fully dialed in.",             s: "Not a single connection going cold." },
+    { h: "Network turned all the way up.", s: "Zero contacts slipping through the cracks." },
+    { h: "Max signal. Stay locked in.",  s: "Your whole network is firing right now." },
+  ]
+  const dailyMsg = DIALED_MSGS[Math.floor(Date.now() / 86_400_000) % DIALED_MSGS.length]
+
+  let headline = dailyMsg.h
+  let subline   = dailyMsg.s
+  if (attn > 0) {
+    const parts: string[] = []
+    if (overdue > 0) parts.push(`${overdue} cooling off`)
+    if (dueSoon > 0) parts.push(`${dueSoon} due soon`)
+    headline = `${attn} need${attn === 1 ? 's' : ''} you`
+    subline = parts.join(', ') + '.'
+  }
+
   return (
-    <AnimatedPressable style={styles.medCard} onPress={onPress}>
-      <View style={styles.cardTop}>
-        <View style={styles.cardLeft}>
-          <View style={[styles.avatar, { width: 44, height: 44 }]}>
-            <Text style={[styles.avatarText, { fontSize: 14 }]}>{initials(contact.name)}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.medName}>{contact.name}</Text>
-            <Text style={styles.cardRole}>{contact.role}</Text>
+    <View style={{ borderRadius: 20, overflow: 'hidden' }}>
+      <LinearGradient
+        colors={['#0C1E35', '#081018']}
+        start={{ x: 0.1, y: 0 }} end={{ x: 1, y: 1 }}
+        style={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 0 }}
+      >
+        <Text style={{
+          fontFamily: FontFamily.sansMedium, fontSize: 10,
+          letterSpacing: 1, textTransform: 'uppercase',
+          color: 'rgba(255,255,255,0.45)', marginBottom: 8,
+        }}>
+          Network health
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <DialGauge score={score} />
+          <View style={{ flex: 1, paddingLeft: 10 }}>
+            <Text style={{ fontFamily: FontFamily.display, fontSize: 22, color: '#FFFFFF', lineHeight: 28 }}>
+              {headline}
+            </Text>
+            <Text style={{ fontFamily: FontFamily.sans, fontSize: 13.5, color: 'rgba(255,255,255,0.5)', marginTop: 5, lineHeight: 19 }}>
+              {subline}
+            </Text>
           </View>
         </View>
-        <StatusBadge status={contact.status} />
-      </View>
-      <View style={styles.cardBottom}>
-        <Stars count={contact.stars} size={11} />
-        <View style={styles.daysRow}>
-          <Text style={[styles.medDays, { color: dayColor }]}>{contact.days_since_contact}</Text>
-          <Text style={styles.daysAgo}>days ago</Text>
+        <TouchableOpacity
+          onPress={onPendingPress}
+          activeOpacity={0.7}
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+            backgroundColor: 'rgba(255,255,255,0.07)',
+            borderRadius: 12, paddingVertical: 13, marginTop: 14, marginBottom: 18,
+          }}
+        >
+          <Ionicons name="mail-outline" size={16} color="rgba(255,255,255,0.55)" />
+          <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: 'rgba(255,255,255,0.75)' }}>
+            {pendingCount} waiting on your reply
+          </Text>
+          <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.4)" />
+        </TouchableOpacity>
+      </LinearGradient>
+    </View>
+  )
+}
+
+// ── FavoritesRow ──────────────────────────────────────────────────────────────
+
+function FavoritesRow({ contacts, onPress }: { contacts: Contact[]; onPress: (id: number) => void }) {
+  const c = useColors()
+  const favs = contacts.filter(ct => ct.is_favorite)
+  if (favs.length === 0) return null
+
+  return (
+    <View>
+      <Text style={{
+        fontFamily: FontFamily.sansMedium, fontSize: 11, letterSpacing: 0.9,
+        textTransform: 'uppercase', color: c.secondary, marginBottom: 12,
+      }}>
+        Starred
+      </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 16, paddingRight: 4 }}>
+        {favs.map(ct => {
+          const tc = typeColor(ct.relationship_type)
+          const badgeColor = ct.status === 'overdue' ? c.overdue : ct.status === 'due-soon' ? c.warning : null
+          return (
+            <TouchableOpacity key={ct.id} onPress={() => onPress(ct.id)} activeOpacity={0.75}
+              style={{ alignItems: 'center', gap: 7, width: 60 }}>
+              <View style={{ position: 'relative' }}>
+                <ContactAvatar name={ct.name} avatarUrl={ct.avatar_url} size={52} borderRadius={26} bgColor={tc} />
+                {badgeColor && (
+                  <View style={{
+                    position: 'absolute', top: 1, right: 1,
+                    width: 12, height: 12, borderRadius: 6,
+                    backgroundColor: badgeColor, borderWidth: 2, borderColor: c.background,
+                  }} />
+                )}
+              </View>
+              <Text style={{ fontFamily: FontFamily.sans, fontSize: 11.5, color: c.secondary, textAlign: 'center' }} numberOfLines={1}>
+                {ct.name.split(' ')[0]}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
+      </ScrollView>
+    </View>
+  )
+}
+
+// ── AttentionCard ─────────────────────────────────────────────────────────────
+
+function AttentionCard({ contact, onPress, onTalked, onDraft }: {
+  contact: Contact; onPress: () => void
+  onTalked: (id: number) => Promise<void>; onDraft: (id: number) => void
+}) {
+  const c = useColors()
+  const tc = typeColor(contact.relationship_type)
+  const [talking, setTalking] = useState(false)
+  const [talked, setTalked] = useState(false)
+  const isOverdue = contact.status === 'overdue'
+  const statusColor = isOverdue ? c.overdue : c.warning
+  const statusLabel = isOverdue ? 'Overdue' : 'Due soon'
+
+  async function handleTalked() {
+    if (talking || talked) return
+    setTalking(true)
+    try { await onTalked(contact.id); setTalked(true) } catch {} finally { setTalking(false) }
+  }
+
+  return (
+    <View style={{ backgroundColor: c.surface, borderRadius: 20, borderWidth: 1, borderColor: c.subtleBorder }}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+        <View style={{ padding: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <ContactAvatar name={contact.name} avatarUrl={contact.avatar_url} size={46} borderRadius={23} bgColor={tc} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontFamily: FontFamily.display, fontSize: 16, color: c.primary, lineHeight: 20 }} numberOfLines={1}>
+                {contact.name}
+              </Text>
+              <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginTop: 1 }}>
+                Last contact {contact.days_since_contact}d ago · every {contact.cadence_days}d
+              </Text>
+            </View>
+            <View style={{ backgroundColor: statusColor + '22', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 12, color: statusColor }}>{statusLabel}</Text>
+            </View>
+          </View>
         </View>
+      </TouchableOpacity>
+
+      {contact.linked_opportunity?.deadline && (() => {
+        const daysLeft = Math.ceil((new Date(contact.linked_opportunity!.deadline!).getTime() - Date.now()) / 86_400_000)
+        if (daysLeft > 7) return null
+        return (
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 8,
+            paddingHorizontal: 16, paddingVertical: 8,
+            backgroundColor: c.warning + '12',
+            borderTopWidth: 1, borderTopColor: c.warning + '22',
+          }}>
+            <Ionicons name="flame" size={14} color={c.warning} />
+            <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 12.5, color: c.warning }}>
+              {contact.linked_opportunity!.title} — deadline in {daysLeft}d
+            </Text>
+          </View>
+        )
+      })()}
+
+      <View style={{
+        flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 14,
+        borderTopWidth: 1, borderTopColor: c.subtleBorder, paddingTop: 12,
+      }}>
+        <TouchableOpacity
+          onPress={() => onDraft(contact.id)} activeOpacity={0.7}
+          style={{
+            flex: 1, height: 40, borderRadius: 10,
+            borderWidth: 1.5, borderColor: c.border,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+          }}
+        >
+          <Ionicons name="add" size={16} color={c.gold} />
+          <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13.5, color: c.gold }}>Draft a note</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleTalked} disabled={talking || talked} activeOpacity={0.8}
+          style={{
+            flex: 1, height: 40, borderRadius: 10,
+            backgroundColor: talked ? c.success : c.gold,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+          }}
+        >
+          {talking
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <>
+              <Ionicons name="checkmark" size={16} color="#fff" />
+              <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13.5, color: '#fff' }}>
+                {talked ? 'Logged!' : 'Reached out'}
+              </Text>
+            </>
+          }
+        </TouchableOpacity>
       </View>
-    </AnimatedPressable>
+    </View>
   )
 }
 
-function GrowNetworkCard({ onPress }: { onPress: () => void }) {
+// ── OnTrackSection ────────────────────────────────────────────────────────────
+
+function OnTrackSection({ contacts, onPress, onViewAll }: {
+  contacts: Contact[]; onPress: (id: number) => void; onViewAll: () => void
+}) {
   const c = useColors()
-  const styles = makeStyles(c)
+  const good = contacts.filter(ct => ct.status === 'good')
+  if (good.length === 0) return null
+
   return (
-    <TouchableOpacity style={styles.growCard} onPress={onPress} activeOpacity={0.75}>
-      <View style={styles.growAvatar}>
-        <Ionicons name="person-add-outline" size={20} color={c.secondary} />
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: c.secondary }}>
+          On track
+        </Text>
+        <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.tertiary }}>{good.length}</Text>
       </View>
-      <View style={styles.growText}>
-        <Text style={styles.growTitle}>Grow Your Network</Text>
-        <Text style={styles.growSub}>A strong orbit always has someone to reach out to.</Text>
+      <View style={{ backgroundColor: c.surface, borderRadius: 20, borderWidth: 1, borderColor: c.subtleBorder, overflow: 'hidden' }}>
+        {good.slice(0, 5).map((ct, i) => (
+          <TouchableOpacity key={ct.id} onPress={() => onPress(ct.id)} activeOpacity={0.7}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: c.border }}>
+            <ContactAvatar name={ct.name} avatarUrl={ct.avatar_url} size={40} borderRadius={20} bgColor={typeColor(ct.relationship_type)} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontFamily: FontFamily.display, fontSize: 15, color: c.primary }} numberOfLines={1}>{ct.name}</Text>
+              <Text style={{ fontFamily: FontFamily.sans, fontSize: 12.5, color: c.secondary, marginTop: 1 }}>
+                {ct.days_since_contact === 0 ? 'Reconnected today' : `Last contact ${ct.days_since_contact}d ago`}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={15} color={c.tertiary} />
+          </TouchableOpacity>
+        ))}
+        {good.length > 5 && (
+          <TouchableOpacity onPress={onViewAll} activeOpacity={0.7}
+            style={{ padding: 14, alignItems: 'center', borderTopWidth: 1, borderTopColor: c.border }}>
+            <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.gold }}>View all {good.length}</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={c.tertiary} />
-    </TouchableOpacity>
+    </View>
   )
 }
 
-function activityLabel(contact: Contact): string {
-  if (contact.days_since_contact === 0) return 'Reconnected today'
-  if (contact.days_since_contact <= 2) return 'Reconnected'
-  if (contact.status === 'due-soon') return 'Follow up due soon'
-  if (contact.status === 'overdue') return 'Follow up overdue'
-  return 'Keeping in touch'
-}
+// ── InboxView ─────────────────────────────────────────────────────────────────
 
-function activityTimeLabel(days: number): string {
-  if (days === 0) return 'today'
-  if (days === 1) return '1 day ago'
-  return `${days} days ago`
-}
-
-function ActivityRow({ contact, last, onPress }: { contact: Contact; last?: boolean; onPress: () => void }) {
+function InboxView({ pending, onOpen, onDismiss, onReplied, bottomPad }: {
+  pending: PendingResponse[]
+  onOpen: (pr: PendingResponse) => void
+  onDismiss: (id: number) => Promise<void>
+  onReplied: (id: number) => Promise<void>
+  bottomPad: number
+}) {
   const c = useColors()
-  const styles = makeStyles(c)
+  const [acting, setActing] = useState<Record<number, 'dismiss' | 'replied' | null>>({})
+
+  async function handleAction(prId: number, type: 'dismiss' | 'replied') {
+    setActing(prev => ({ ...prev, [prId]: type }))
+    try {
+      if (type === 'dismiss') await onDismiss(prId)
+      else await onReplied(prId)
+    } finally {
+      setActing(prev => ({ ...prev, [prId]: null }))
+    }
+  }
+
+  if (pending.length === 0) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: bottomPad }}>
+        <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: c.success + '16', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+          <Ionicons name="checkmark-circle-outline" size={32} color={c.success} />
+        </View>
+        <Text style={{ fontFamily: FontFamily.display, fontSize: 20, color: c.primary }}>All clear</Text>
+        <Text style={{ fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary, marginTop: 6, textAlign: 'center', paddingHorizontal: 48, lineHeight: 20 }}>
+          No emails waiting on your reply right now.
+        </Text>
+      </View>
+    )
+  }
+
   return (
-    <TouchableOpacity
-      style={[styles.activityRow, last && { borderBottomWidth: 0 }]}
-      onPress={onPress}
-      activeOpacity={0.7}
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, gap: 10, paddingBottom: bottomPad }}
+      showsVerticalScrollIndicator={false}
     >
-      <View style={styles.activityAvatar}>
-        <Text style={styles.activityAvatarText}>{initials(contact.name)}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.activityName} numberOfLines={1}>{contact.name}</Text>
-        <Text style={styles.activityLabel}>{activityLabel(contact)}</Text>
-      </View>
-      <Text style={styles.activityTime}>{activityTimeLabel(contact.days_since_contact)}</Text>
-    </TouchableOpacity>
+      {pending.map(pr => {
+        const h = hoursAgo(pr.email_date ?? pr.detected_at)
+        const urgencyColor = pendingTimeTint(c, h)
+        const isActing = acting[pr.id]
+
+        return (
+          <TouchableOpacity
+            key={pr.id}
+            onPress={() => onOpen(pr)}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: c.surface, borderRadius: 18,
+              borderWidth: 1, borderColor: c.subtleBorder,
+              overflow: 'hidden',
+            }}
+          >
+            {/* Urgency accent bar */}
+            <View style={{ height: 3, backgroundColor: urgencyColor, opacity: 0.7 }} />
+
+            {/* Main content */}
+            <View style={{ padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <ContactAvatar name={pr.contact.name} size={44} borderRadius={22} bgColor={urgencyColor + '28'} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ fontFamily: FontFamily.display, fontSize: 15.5, color: c.primary }} numberOfLines={1}>
+                      {pr.contact.name}
+                    </Text>
+                    <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 12, color: urgencyColor, marginLeft: 8, flexShrink: 0 }}>
+                      {pendingTimeLabel(h)}
+                    </Text>
+                  </View>
+                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.primary, marginTop: 2 }} numberOfLines={1}>
+                    Re: {pr.email_subject}
+                  </Text>
+                  {!!pr.email_preview && (
+                    <Text style={{ fontFamily: FontFamily.sans, fontSize: 12.5, color: c.secondary, marginTop: 3, lineHeight: 17 }} numberOfLines={2}>
+                      {pr.email_preview}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            {/* Action row */}
+            <View style={{
+              flexDirection: 'row', gap: 8,
+              paddingHorizontal: 14, paddingBottom: 13, paddingTop: 4,
+            }}>
+              <TouchableOpacity
+                onPress={() => handleAction(pr.id, 'dismiss')}
+                disabled={!!isActing}
+                activeOpacity={0.7}
+                style={{
+                  flex: 1, height: 36, borderRadius: 10,
+                  borderWidth: 1, borderColor: c.border,
+                  alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.tertiary }}>
+                  {isActing === 'dismiss' ? 'Dismissing…' : 'Dismiss'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => handleAction(pr.id, 'replied')}
+                disabled={!!isActing}
+                activeOpacity={0.8}
+                style={{
+                  flex: 2, height: 36, borderRadius: 10,
+                  backgroundColor: c.gold,
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                }}
+              >
+                <Ionicons name="checkmark" size={15} color="#fff" />
+                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13, color: '#fff' }}>
+                  {isActing === 'replied' ? 'Saving…' : 'Marked replied'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        )
+      })}
+    </ScrollView>
   )
 }
 
-function CompactRow({ contact, onPress }: { contact: Contact; onPress: () => void }) {
+
+// ── PillTabBar ────────────────────────────────────────────────────────────────
+
+function PillTabBar({ tab, onTab, onAdd, onSearch, pendingCount, slideAnim }: {
+  tab: 'network' | 'inbox'
+  onTab: (t: 'network' | 'inbox') => void
+  onAdd: () => void
+  onSearch: () => void
+  pendingCount: number
+  slideAnim: Animated.Value
+}) {
   const c = useColors()
-  const styles = makeStyles(c)
-  const dotColor = contact.status === 'overdue' ? c.overdue
-    : contact.status === 'due-soon' ? c.warning : c.success
+  const { mode } = useThemeMode()
+  const insets = useSafeAreaInsets()
+  const [pillW, setPillW] = useState(0)
+  const isDark = mode === 'dark'
+
+  const items = [
+    { id: 'network', label: 'Network', icon: 'people' as const,       iconOut: 'people-outline' as const },
+    { id: 'inbox',   label: 'Inbox',   icon: 'mail' as const,         iconOut: 'mail-outline' as const },
+    { id: 'add',     label: 'Add',     icon: 'add-circle' as const,   iconOut: 'add-circle-outline' as const },
+    { id: 'search',  label: 'Search',  icon: 'search' as const,       iconOut: 'search-outline' as const },
+  ]
+
+  // Tab width = pillW / 4. Indicator slides between tab 0 (Network) and tab 1 (Inbox).
+  const tabW = pillW / 4
+  const indicatorW = 28
+
+  const indicatorX = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [tabW / 2 - indicatorW / 2, tabW * 1.5 - indicatorW / 2],
+  })
+
   return (
-    <AnimatedPressable style={styles.compactRow} onPress={onPress}>
-      <View style={styles.compactAvatar}>
-        <Text style={styles.compactAvatarText}>{initials(contact.name)}</Text>
-      </View>
-      <Text style={styles.compactName} numberOfLines={1}>{contact.name}</Text>
-      <View style={styles.compactRight}>
-        <View style={[styles.dot, { backgroundColor: dotColor }]} />
-        <Text style={styles.compactDays}>{contact.days_since_contact}d</Text>
-      </View>
-    </AnimatedPressable>
+    <View style={{
+      position: 'absolute', bottom: PILL_BOTTOM_MARGIN + Math.max(insets.bottom, 0),
+      left: 16, right: 16,
+      borderRadius: 999,
+      overflow: 'hidden',
+      shadowColor: isDark ? '#000' : '#0D1526',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: isDark ? 0.5 : 0.13, shadowRadius: 22, elevation: 14,
+    }}>
+      <BlurView
+        intensity={isDark ? 60 : 75}
+        tint={isDark ? 'dark' : 'light'}
+        style={{
+          paddingVertical: 8, paddingHorizontal: 4,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.60)',
+          backgroundColor: isDark ? 'rgba(22,20,30,0.80)' : 'rgba(255,255,255,0.55)',
+        }}
+        onLayout={e => setPillW(e.nativeEvent.layout.width)}
+      >
+        {/* Sliding indicator dot */}
+        {pillW > 0 && (
+          <Animated.View style={{
+            position: 'absolute',
+            bottom: 7,
+            width: indicatorW,
+            height: 3,
+            borderRadius: 2,
+            backgroundColor: c.gold,
+            transform: [{ translateX: indicatorX }],
+            // blue glow on iOS
+            shadowColor: c.gold,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.7,
+            shadowRadius: 5,
+          }} />
+        )}
+
+        <View style={{ flexDirection: 'row' }}>
+          {items.map(item => {
+            const isNavTab = item.id === 'network' || item.id === 'inbox'
+            const active = isNavTab && tab === item.id
+            const color = active ? c.gold : isDark ? c.secondary : c.tertiary
+
+            function handlePress() {
+              if (item.id === 'network' || item.id === 'inbox') onTab(item.id)
+              else if (item.id === 'add') onAdd()
+              else if (item.id === 'search') onSearch()
+            }
+
+            return (
+              <TouchableOpacity
+                key={item.id}
+                onPress={handlePress}
+                activeOpacity={0.65}
+                style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 5 }}
+              >
+                {/* Icon with glow halo on active */}
+                <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+                  {active && (
+                    <View style={{
+                      position: 'absolute',
+                      width: 34, height: 34, borderRadius: 17,
+                      backgroundColor: c.gold + '18',
+                    }} />
+                  )}
+                  <Ionicons
+                    name={active ? item.icon : item.iconOut}
+                    size={24}
+                    color={color}
+                    style={active ? {
+                      shadowColor: c.gold,
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 0.55,
+                      shadowRadius: 6,
+                    } : undefined}
+                  />
+                  {item.id === 'inbox' && pendingCount > 0 && (
+                    <View style={{
+                      position: 'absolute', top: -4, right: -7,
+                      backgroundColor: c.overdue, borderRadius: 8,
+                      minWidth: 16, height: 16, paddingHorizontal: 3,
+                      alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 1.5,
+                      borderColor: isDark ? 'rgba(22,20,30,0.95)' : c.surface,
+                    }}>
+                      <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 10, color: '#fff' }}>
+                        {pendingCount > 9 ? '9+' : pendingCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 10.5, color, letterSpacing: 0.1 }}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+      </BlurView>
+    </View>
   )
 }
+
+// ── HomeScreen ────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const { user } = useAuth()
   const router = useRouter()
   const { welcome } = useLocalSearchParams<{ welcome?: string }>()
   const c = useColors()
-  const styles = makeStyles(c)
+  const insets = useSafeAreaInsets()
+  const { width: screenW } = useWindowDimensions()
+  const slideAnim = useRef(new Animated.Value(0)).current
+  const tabRef = useRef<'network' | 'inbox'>('network')
+  const switchTabFn = useRef<(t: 'network' | 'inbox') => void>(() => {})
   const [contacts, setContacts] = useState<Contact[]>([])
   const [opps, setOpps] = useState<Opportunity[]>([])
   const [pending, setPending] = useState<PendingResponse[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [orbitScore, setOrbitScore] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [showWelcome, setShowWelcome] = useState(welcome === '1')
   const [titlePref, setTitlePref] = useState('')
-  const [hasLoaded, setHasLoaded] = useState(false)
-  const [learnMode, setLearnMode] = useState(false)
-  const tabBarPadding = useTabBarPadding()
+  const [tab, setTab] = useState<'network' | 'inbox'>('network')
+
+  function switchTab(newTab: 'network' | 'inbox') {
+    if (tabRef.current === newTab) return
+    tabRef.current = newTab
+    setTab(newTab)
+    Animated.spring(slideAnim, {
+      toValue: newTab === 'inbox' ? 1 : 0,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 13,
+    }).start()
+  }
+  switchTabFn.current = switchTab
+
+  const contentPan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gs) =>
+        Math.abs(gs.dx) > Math.abs(gs.dy) * 2.5 && Math.abs(gs.dx) > 10,
+      onPanResponderRelease: (_, gs) => {
+        if ((gs.dx < -50 || gs.vx < -0.4) && tabRef.current === 'network')
+          switchTabFn.current('inbox')
+        else if ((gs.dx > 50 || gs.vx > 0.4) && tabRef.current === 'inbox')
+          switchTabFn.current('network')
+      },
+    })
+  ).current
+
+  // bottom padding = pill bar height + bottom inset + margin + a little breathing room
+  const bottomPad = PILL_H + Math.max(insets.bottom, 0) + PILL_BOTTOM_MARGIN + 16
 
   useEffect(() => {
     AsyncStorage.getItem(TITLE_PREF_KEY).then(v => setTitlePref(v ?? '')).catch(() => {})
-    AsyncStorage.getItem('dialed_home_mode').then(v => { if (v === 'learn') setLearnMode(true) }).catch(() => {})
   }, [])
-
-  function handleModeChange(m: 'learn' | 'maintain') {
-    setLearnMode(m === 'learn')
-    AsyncStorage.setItem('dialed_home_mode', m).catch(() => {})
-  }
 
   const loadData = useCallback(async () => {
     try {
-      const [c, o, p, n, tracker] = await Promise.all([
+      const [cts, os, ps, ns] = await Promise.all([
         contactsDb.list(fresh => setContacts(fresh)),
         oppsDb.list(fresh => setOpps(fresh)),
         pendingDb.list(fresh => setPending(fresh)),
         notifDb.list(fresh => setNotifications(fresh)),
-        getTrackerData(),
       ])
-      setContacts(c); setOpps(o); setPending(p); setNotifications(n)
-      setOrbitScore(tracker.orbitScore)
-    } finally {
-      setLoading(false); setRefreshing(false)
-    }
+      setContacts(cts); setOpps(os); setPending(ps); setNotifications(ns)
+    } finally { setLoading(false); setRefreshing(false) }
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
-  useEffect(() => { if (!loading && !hasLoaded) setHasLoaded(true) }, [loading])
   useFocusEffect(useCallback(() => { loadData() }, [loadData]))
   function onRefresh() { setRefreshing(true); loadData() }
 
-  const firstName = user?.name?.split(' ')[0] ?? 'there'
-  const unread = notifications.filter(n => !n.is_read).length
-  const overdueCt = contacts.filter(contact => contact.status === 'overdue').length
-  const dueSoonCt = contacts.filter(contact => contact.status === 'due-soon').length
-  const awaitingCt = pending.length
-  const activeOppsCt = opps.filter(o => o.state === 'active' || o.state === 'upcoming').length
-  const overdueOppsCt = opps.filter(o => o.state === 'overdue').length
+  async function handleTalked(id: number) {
+    try {
+      await contactsDb.talked(id)
+      setContacts(prev => prev.map(ct =>
+        ct.id === id ? { ...ct, days_since_contact: 0, status: 'good' as const } : ct
+      ))
+      // talked() already marks pending as responded on the server; sync local state
+      setPending(prev => prev.filter(pr => pr.contact_id !== id))
+    } catch {}
+  }
+
+  function handleOpenReply(pr: PendingResponse) {
+    router.push({
+      pathname: '/reply',
+      params: {
+        prId: String(pr.id),
+        contactId: String(pr.contact_id),
+        contactName: pr.contact.name,
+        contactRole: pr.contact.role ?? '',
+        relationship: pr.contact.relationship_type ?? '',
+        subject: pr.email_subject,
+        preview: pr.email_preview ?? '',
+        body: pr.email_body ?? pr.email_preview ?? '',
+        date: pr.email_date,
+      },
+    } as any)
+  }
+
+  async function handleDismiss(prId: number) {
+    await pendingDb.dismiss(prId)
+    setPending(prev => prev.filter(pr => pr.id !== prId))
+  }
+
+  async function handleReplied(prId: number) {
+    await pendingDb.responded(prId)
+    setPending(prev => prev.filter(pr => pr.id !== prId))
+  }
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
+
+  const overdueCt = contacts.filter(ct => ct.status === 'overdue').length
+  const dueSoonCt = contacts.filter(ct => ct.status === 'due-soon').length
+  const score = networkScore(contacts)
   const attentionCt = overdueCt + dueSoonCt
-  const attentionContacts = contacts.filter(c => c.status === 'overdue' || c.status === 'due-soon')
+  const initials = user?.name
+    ? user.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+    : '?'
+
+  const attentionContacts = contacts
+    .filter(ct => ct.status === 'overdue' || ct.status === 'due-soon')
     .sort((a, b) => {
-      const order = { overdue: 0, 'due-soon': 1, good: 2 }
-      const statusDiff = order[a.status] - order[b.status]
-      if (statusDiff !== 0) return statusDiff
-      return b.days_since_contact - a.days_since_contact
+      const order: Record<string, number> = { overdue: 0, 'due-soon': 1, good: 2 }
+      const d = (order[a.status] ?? 2) - (order[b.status] ?? 2)
+      return d !== 0 ? d : b.days_since_contact - a.days_since_contact
     })
-  const recentContacts = [...contacts]
-    .sort((a, b) => a.days_since_contact - b.days_since_contact)
-    .slice(0, 3)
-
-  function tier(contact: Contact): 1 | 2 | 3 {
-    if (contact.stars === 5 && contact.status === 'overdue') return 1
-    if (contact.stars >= 4 || contact.status === 'due-soon') return 2
-    return 3
-  }
-
-  const orbitStats = {
-    overdue: overdueCt,
-    dueSoon: dueSoonCt,
-    totalContacts: contacts.length,
-  }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Sticky header + toggle — outside the ScrollView so they stay fixed */}
-      <View style={styles.header}>
-        <View style={styles.logoRow}>
-          <Text style={styles.logoDark}>DI</Text>
-          <View style={styles.logoSlashWrap}>
-            <Text style={styles.logoBlue}>AL</Text>
-            <View style={styles.logoSlash} />
-          </View>
-          <Text style={styles.logoDark}>ED</Text>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconBtn} activeOpacity={0.7}>
-            <Ionicons name="notifications-outline" size={22} color={c.secondary} />
-            {unread > 0 && <View style={styles.badge} />}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setAddOpen(true)} activeOpacity={0.85}>
-            <Ionicons name="add" size={20} color={c.background} />
-          </TouchableOpacity>
-        </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.background }} edges={['top']}>
+
+      {/* Header — DIALED left, account avatar right */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12,
+      }}>
+        <DialWordmark />
+        <TouchableOpacity
+          onPress={() => router.push('/settings' as any)}
+          activeOpacity={0.7}
+          style={{
+            width: 36, height: 36, borderRadius: 18,
+            backgroundColor: c.elevated,
+            alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.secondary }}>
+            {initials}
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      <ModeToggle mode={learnMode ? 'learn' : 'maintain'} onChange={handleModeChange} />
+      {/* Content — two panes side by side, animated slide + swipe gesture */}
+      <View style={{ flex: 1, overflow: 'hidden' }} {...contentPan.panHandlers}>
+        <Animated.View style={{
+          flexDirection: 'row',
+          width: screenW * 2,
+          flex: 1,
+          transform: [{
+            translateX: slideAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -screenW],
+            }),
+          }],
+        }}>
+          {/* ── Network pane ── */}
+          <View style={{ width: screenW, flex: 1 }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 2, gap: 18, paddingBottom: bottomPad }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.secondary} />}
+        >
+          <HealthHeroCard
+            score={score}
+            contacts={contacts}
+            pendingCount={pending.length}
+            onPendingPress={() => setTab('inbox')}
+          />
 
-      {learnMode ? (
-        <LearnHome orbitStats={orbitStats} />
-      ) : (
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.secondary} />}
-      >
-        {orbitScore !== null && <NetworkHealthBar score={orbitScore} />}
+          <FavoritesRow contacts={contacts} onPress={id => router.push(`/contact/${id}` as any)} />
 
-        <View style={styles.statGrid}>
-          <StatCard label="OVERDUE" value={overdueCt} color={c.overdue} icon="alarm-outline" onPress={() => router.push('/(tabs)/orbit?filter=overdue')} />
-          <StatCard label="DUE SOON" value={dueSoonCt} color={c.warning} icon="calendar-outline" onPress={() => router.push('/(tabs)/orbit?filter=due-soon')} />
-          <StatCard label="AWAITING" value={awaitingCt} color={c.warning} icon="hourglass-outline" onPress={() => router.push('/(tabs)/orbit?filter=all')} />
-          <StatCard label="ACTIVE" value={activeOppsCt} color={c.success} icon="people-outline" onPress={() => router.push('/(tabs)/opportunities?filter=upcoming')} />
-        </View>
-
-        <View style={styles.greetingBlock}>
-          <Text style={styles.greetingText}>{greeting()}</Text>
-          <Text style={styles.greetingName}>{firstName}</Text>
-        </View>
-
-        {pending.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>WAITING FOR YOUR REPLY</Text>
-            {pending.map(pr => {
-              const h = hoursAgo(pr.detected_at)
-              return (
-                <TouchableOpacity
-                  key={pr.id}
-                  style={styles.pendingRow}
-                  onPress={() => router.push(`/contact/${pr.contact_id}`)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.dot, { backgroundColor: c.warning, width: 8, height: 8 }]} />
-                  <View style={[styles.compactAvatar, { width: 40, height: 40 }]}>
-                    <Text style={styles.compactAvatarText}>{initials(pr.contact.name)}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.pendingName} numberOfLines={1}>{pr.contact.name}</Text>
-                    <Text style={styles.pendingSubject} numberOfLines={1}>{pr.email_subject}</Text>
-                  </View>
-                  <Text style={[styles.pendingTime, { color: pendingTimeColor(c, h) }]}>
-                    {pendingTimeLabel(h)}
-                  </Text>
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-        )}
-
-        <Text style={styles.sectionLabel}>NEEDS ATTENTION</Text>
-
-        {loading ? (
-          <ActivityIndicator color={c.gold} style={{ marginTop: 32 }} />
-        ) : contacts.length === 0 ? (
-          <Text style={styles.emptyText}>No contacts yet. Add someone to your orbit.</Text>
-        ) : attentionContacts.length === 0 ? (
-          <Text style={[styles.emptyText, { marginTop: 16, marginBottom: 8 }]}>
-            You're all caught up.
-          </Text>
-        ) : (
-          attentionContacts.map((contact, index) => {
-            const t = tier(contact)
-            const entering = hasLoaded ? undefined : FadeInDown.delay(Math.min(index, 8) * 60).springify()
-            return (
-              <ReAnimated.View key={contact.id} entering={entering} exiting={FadeOutUp.duration(300)}>
-                {t === 1 && <HeroCard contact={contact} onPress={() => router.push(`/contact/${contact.id}`)} />}
-                {t === 2 && <MediumCard contact={contact} onPress={() => router.push(`/contact/${contact.id}`)} />}
-                {t === 3 && <CompactRow contact={contact} onPress={() => router.push(`/contact/${contact.id}`)} />}
-              </ReAnimated.View>
-            )
-          })
-        )}
-
-        {!loading && contacts.length > 0 && attentionCt < 3 && (
-          <GrowNetworkCard onPress={() => setAddOpen(true)} />
-        )}
-
-        {!loading && recentContacts.length > 0 && (
-          <View style={styles.activitySection}>
-            <View style={styles.activityHeader}>
-              <Text style={styles.sectionLabel}>RECENT ACTIVITY</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/orbit')} activeOpacity={0.7}>
-                <Text style={styles.viewAllText}>View all</Text>
-              </TouchableOpacity>
+          {/* Needs Attention */}
+          <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: c.secondary }}>
+                Needs attention
+              </Text>
+              {attentionCt > 0 && (
+                <View style={{ backgroundColor: c.overdue, borderRadius: 99, width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 12, color: '#fff' }}>{attentionCt}</Text>
+                </View>
+              )}
             </View>
-            {recentContacts.map((contact, i) => (
-              <ActivityRow
-                key={contact.id}
-                contact={contact}
-                last={i === recentContacts.length - 1}
-                onPress={() => router.push(`/contact/${contact.id}`)}
-              />
-            ))}
-          </View>
-        )}
 
-        <View style={{ height: tabBarPadding }} />
-      </ScrollView>
-      )}
+            {loading ? (
+              <ActivityIndicator color={c.gold} style={{ marginTop: 16 }} />
+            ) : attentionContacts.length === 0 ? (
+              <View style={{ backgroundColor: c.surface, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: c.subtleBorder, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: c.success + '18', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="checkmark" size={22} color={c.success} />
+                </View>
+                <View>
+                  <Text style={{ fontFamily: FontFamily.display, fontSize: 16, color: c.primary }}>You're all caught up</Text>
+                  <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginTop: 2 }}>No one is going cold today.</Text>
+                </View>
+              </View>
+            ) : (
+              <View style={{ gap: 12 }}>
+                {attentionContacts.map(ct => (
+                  <AttentionCard
+                    key={ct.id}
+                    contact={ct}
+                    onPress={() => router.push(`/contact/${ct.id}` as any)}
+                    onTalked={handleTalked}
+                    onDraft={id => router.push(`/contact/${id}` as any)}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* On Track */}
+          {!loading && (
+            <OnTrackSection
+              contacts={contacts}
+              onPress={id => router.push(`/contact/${id}` as any)}
+              onViewAll={() => router.push('/people' as any)}
+            />
+          )}
+
+          {/* Empty state */}
+          {!loading && contacts.length === 0 && (
+            <TouchableOpacity
+              onPress={() => setAddOpen(true)} activeOpacity={0.75}
+              style={{ backgroundColor: c.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: c.subtleBorder, alignItems: 'center', gap: 10 }}
+            >
+              <Ionicons name="person-add-outline" size={28} color={c.gold} />
+              <Text style={{ fontFamily: FontFamily.display, fontSize: 17, color: c.primary }}>Add your first contact</Text>
+              <Text style={{ fontFamily: FontFamily.sans, fontSize: 13.5, color: c.secondary, textAlign: 'center', lineHeight: 19 }}>
+                Start tracking your relationships and never let a connection go cold.
+              </Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+          </View>{/* end network pane */}
+
+          {/* ── Inbox pane ── */}
+          <View style={{ width: screenW }}>
+            <InboxView
+              pending={pending}
+              onOpen={handleOpenReply}
+              onDismiss={handleDismiss}
+              onReplied={handleReplied}
+              bottomPad={bottomPad}
+            />
+          </View>
+        </Animated.View>
+      </View>{/* end slide container */}
+
+      {/* Floating pill tab bar */}
+      <PillTabBar
+        tab={tab}
+        onTab={switchTab}
+        onAdd={() => setAddOpen(true)}
+        onSearch={() => router.push('/search' as any)}
+        pendingCount={pending.length}
+        slideAnim={slideAnim}
+      />
 
       <AddContactModal
         visible={addOpen}
@@ -653,9 +970,9 @@ export default function HomeScreen() {
           statLine={
             overdueCt > 0
               ? `You have ${overdueCt} overdue contact${overdueCt !== 1 ? 's' : ''} needing attention`
-              : awaitingCt > 0
-              ? `You have ${awaitingCt} email${awaitingCt !== 1 ? 's' : ''} awaiting a reply`
-              : `Your network is in good shape`
+              : pending.length > 0
+              ? `You have ${pending.length} email${pending.length !== 1 ? 's' : ''} awaiting a reply`
+              : 'Your network is in good shape'
           }
           onDone={() => setShowWelcome(false)}
         />

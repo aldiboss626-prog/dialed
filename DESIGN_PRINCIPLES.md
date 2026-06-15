@@ -63,17 +63,31 @@ Before building any feature, ask: **"Does this make the core loop faster, cleare
 
 ## 5. v1 Feature Scope
 
-### Build these only
+### Built (Free tier — all users)
 - Five-star priority rating per contact (drives cadence + notification intensity)
 - Quick-add modal (name, email, relationship type, stars)
-- Gmail auto-suggest (surfaces frequent contacts not yet in Orbit)
+- Orbit view — full contact list, searchable/filterable, swipe to archive/delete
 - AI draft follow-up (context-aware, editable, one tap)
-- Escalation notification engine (frequency scales with stars × deadline proximity)
+- Basic push notifications / cadence reminders
 - Opportunity tracker (title, linked contact, status, deadline)
-- Gmail integration (in Settings)
+- Learn side — 6 topic pages with challenges, streak tracking
+
+### Built (Pro tier — $9.99/month, 7-day free trial)
+- Gmail sync + pending response detection
+- Escalation notification engine (frequency scales with stars × deadline proximity)
+- Full Tracker tab (health score, trends, 6-month history)
+- All AI content tools (outfit check, resume builder, LinkedIn audit, company plan, venue suggestions, career exposure planner)
+- Opportunity AI suggestions
+
+### Pro tier infrastructure
+- Tier stored in Supabase `user_metadata.tier` (`'free'` | `'pro'`)
+- `usePro()` hook — single source of truth; never read `user.tier` directly
+- `DevProProvider` — AsyncStorage override (`dialed_dev_pro_override`) for testing without Supabase changes
+- RevenueCat webhook flips tier server-side on subscription events
+- RevenueCat SDK not yet installed — purchase/restore are placeholders
 
 ### Explicitly cut from v1
-LinkedIn integration, calendar sync, burnout/mood detection, "coming soon" placeholders, auto-sending messages, anything not in the list above.
+LinkedIn integration, calendar sync, burnout/mood detection, "coming soon" placeholders, auto-sending messages, job matching (demo exists in Opportunities tab, not live).
 
 ---
 
@@ -107,7 +121,9 @@ All values apply to both the web (Tailwind tokens) and mobile (React Native `the
 | `success` | `#5BA882` | Good status, completed, Gmail connected |
 | `neutral` | `#5A5760` | Inactive borders, neutral left-edge accents |
 
-> **Note:** `tailwind.config.js` currently has `gold: '#B8943A'` which is a stale value. The canonical gold used everywhere in CSS and React Native is `#C9A84C`. The tailwind config should be updated to match.
+> **Note:** The canonical gold is `#C9A84C` everywhere — web Tailwind config and React Native `theme.ts`. If `tailwind.config.js` shows `#B8943A`, update it.
+>
+> **Mobile theme default:** The current default theme is `'cal'` (Cal AI warm off-white palette). The dark palette is still available — toggle in app or change `useState<ThemeMode>('cal')` to `'dark'` in `ThemeContext.tsx`.
 
 ### Status color mapping
 
@@ -297,14 +313,17 @@ Full-screen pushes:   Contact Detail, Notifications (route kept, not in nav)
 ### Navigation Structure (Mobile — Expo Router)
 
 ```
-/                   → redirects based on auth state
-/login              → login screen
-/(tabs)/home        → Home tab
-/(tabs)/orbit       → Orbit tab
-/(tabs)/opportunities → Opportunities tab
-/(tabs)/tracker     → Tracker tab
-/(tabs)/settings    → Settings tab
-/contact/[id]       → Contact detail (pushed over tabs)
+/                      → redirects based on auth state
+/login                 → login / register screen
+/onboarding            → 3-card first-launch flow (shown once, on first registration)
+/upgrade               → Pro upgrade modal (slide up from bottom)
+/(tabs)/home           → Home tab
+/(tabs)/orbit          → Orbit tab
+/(tabs)/opportunities  → Opportunities tab
+/(tabs)/tracker        → Tracker tab (Pro-gated)
+/(tabs)/settings       → Settings tab
+/contact/[id]          → Contact detail (pushed over tabs)
+/learn/<topic>         → Full-screen learn topic pages (6 total)
 ```
 
 ---
@@ -323,6 +342,9 @@ PUT           /api/notifications/:id/read   DELETE /api/notifications/:id
 GET           /api/gmail/status|recent  POST /api/gmail/sync
 POST          /api/draft
 GET           /api/tracker
+POST          /api/content/challenge|article|outfit-check|resume-copy
+POST          /api/content/company-plan|venue-suggestions|books|linkedin-audit
+POST          /api/webhooks/revenuecat
 ```
 
 ### Auth

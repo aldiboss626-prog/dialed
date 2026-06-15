@@ -1,16 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
 } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { Ionicons } from '@expo/vector-icons'
 import { FontFamily, Radius, Spacing } from '@/constants/theme'
 import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { TopicPageHeader } from '@/components/learn/TopicPageHeader'
 import { ChallengeSection } from '@/components/learn/ChallengeSection'
+import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed } from '@/lib/learnProgress'
+import { usePro } from '@/hooks/usePro'
+import { getApiUrl } from '@/lib/api'
 
-const ACCENT = '#EF4444'
 const TOPIC = 'dealing-with-authority'
 const TOTAL_ITEMS = 5
 
@@ -24,7 +27,7 @@ const SCRIPTS = [
   },
   {
     title: 'Responding to critical feedback from a manager',
-    body: 'Don\'t get defensive. Pause. Then: "Thank you for the feedback — I want to make sure I understand. Are you saying [X]?" Confirming shows maturity. Follow with: "What would have been a better approach?" You just turned criticism into coaching.',
+    body: "Don't get defensive. Pause. Then: \"Thank you for the feedback — I want to make sure I understand. Are you saying [X]?\" Confirming shows maturity. Follow with: \"What would have been a better approach?\" You just turned criticism into coaching.",
   },
   {
     title: 'Starting a conversation with a senior person at an event',
@@ -33,7 +36,7 @@ const SCRIPTS = [
 ]
 
 const CHALLENGES = [
-  { id: 'auth-1', title: 'Ask a senior person for their story', description: 'Not advice — their story. "How did you get here?" is a much better first question than "Can you give me advice?"' },
+  { id: 'auth-1', title: 'Ask a senior person for their story', description: "Not advice — their story. \"How did you get here?\" is a much better first question than \"Can you give me advice?\"" },
   { id: 'auth-2', title: 'Start reading one book from the list', description: 'Pick the one that resonates most and read at least the first chapter this week.' },
   { id: 'auth-3', title: 'Prep 3 questions for your next senior interaction', description: 'Before any meeting with a professor, manager, or mentor — write down 3 thoughtful questions to ask.' },
 ]
@@ -48,12 +51,19 @@ function makeStyles(c: ColorPalette) {
       shadowOffset: { width: 0, height: 2 }, elevation: 2,
     },
     sectionLabel: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginHorizontal: Spacing.lg, marginBottom: 10 },
-    loadingBox: { height: 80, alignItems: 'center', justifyContent: 'center' },
+    skeletonBox: { gap: 8, paddingVertical: 4 },
     tipRow: { flexDirection: 'row', gap: 10, marginBottom: 12, alignItems: 'flex-start' },
-    tipBullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: ACCENT, marginTop: 8, flexShrink: 0 },
+    tipBullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.gold, marginTop: 8, flexShrink: 0 },
     tipText: { fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary, lineHeight: 21, flex: 1 },
-    bookRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border },
-    bookEmoji: { fontSize: 28, lineHeight: 34 },
+    bookRow: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+      paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border,
+    },
+    bookIconWrap: {
+      width: 40, height: 40, borderRadius: 10,
+      backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0,
+    },
     bookTitle: { fontFamily: FontFamily.sansMedium, fontSize: 14, color: c.primary, marginBottom: 2 },
     bookAuthor: { fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary, marginBottom: 4 },
     bookWhy: { fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary, lineHeight: 17, marginBottom: 8 },
@@ -64,6 +74,8 @@ function makeStyles(c: ColorPalette) {
     scriptTitle: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: c.primary, marginBottom: 8 },
     scriptBody: { fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary, lineHeight: 22, fontStyle: 'italic' },
     divider: { height: 1, backgroundColor: c.border, marginVertical: 14 },
+    showAllBtn: { alignSelf: 'flex-start', marginTop: 4 },
+    showAllText: { fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.gold },
   })
 }
 
@@ -72,6 +84,7 @@ interface Book { emoji: string; title: string; author: string; why: string }
 export default function DealingWithAuthorityPage() {
   const c = useColors()
   const styles = makeStyles(c)
+  const { isPro, openUpgrade } = usePro()
   const [tips, setTips] = useState<string[]>([])
   const [tipsLoading, setTipsLoading] = useState(false)
   const [books, setBooks] = useState<Book[]>([])
@@ -94,6 +107,7 @@ export default function DealingWithAuthorityPage() {
   }, [])
 
   async function loadTips() {
+    if (!isPro) { openUpgrade(); return }
     const cacheKey = 'dialed_authority_tips'
     try {
       const raw = await AsyncStorage.getItem(cacheKey)
@@ -105,14 +119,13 @@ export default function DealingWithAuthorityPage() {
 
     setTipsLoading(true)
     try {
-      const SERVER = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001'
-      const res = await fetch(`${SERVER}/api/content/article`, {
+      const res = await fetch(`${getApiUrl()}/api/content/article`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: 'dealing-with-authority', title: '6 tips for communicating with authority figures' }),
       })
       const data = await res.json()
-      const lines = ((data.intro ?? '') + ' ' + (data.body ?? '')).split(/\n|\. /).filter(l => l.trim().length > 30).slice(0, 6)
+      const lines = ((data.intro ?? '') + ' ' + (data.body ?? '')).split(/\n|\. /).filter((l: string) => l.trim().length > 30).slice(0, 6)
       setTips(lines)
       AsyncStorage.setItem(cacheKey, JSON.stringify({ data: lines, ts: Date.now() })).catch(() => {})
     } catch {
@@ -123,25 +136,27 @@ export default function DealingWithAuthorityPage() {
   }
 
   async function loadBooks() {
+    if (!isPro) { openUpgrade(); return }
     const cacheKey = 'dialed_authority_books'
     try {
       const raw = await AsyncStorage.getItem(cacheKey)
       if (raw) {
         const { data, ts } = JSON.parse(raw)
-        if (Date.now() - ts < 30 * 24 * 3600 * 1000) { setBooks(data); setBooksLoading(false); return }
+        if (Date.now() - ts < 30 * 24 * 3600 * 1000) { setBooks(data ?? []); setBooksLoading(false); return }
       }
     } catch {}
 
     try {
-      const SERVER = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001'
-      const res = await fetch(`${SERVER}/api/content/books`, {
+      const res = await fetch(`${getApiUrl()}/api/content/books`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
       const data = await res.json()
-      setBooks(data.books ?? [])
-      AsyncStorage.setItem(cacheKey, JSON.stringify({ data: data.books, ts: Date.now() })).catch(() => {})
+      const books = data.books ?? []
+      setBooks(books)
+      AsyncStorage.setItem(cacheKey, JSON.stringify({ data: books, ts: Date.now() })).catch(() => {})
     } catch {
       setBooks(FALLBACK_BOOKS)
     } finally {
@@ -182,14 +197,17 @@ export default function DealingWithAuthorityPage() {
 
   return (
     <View style={styles.screen}>
-      <TopicPageHeader title="Authority & Mentors" accentColor={ACCENT} completedCount={completedCount} totalItems={TOTAL_ITEMS} />
+      <TopicPageHeader title="Authority & Mentors" completedCount={completedCount} totalItems={TOTAL_ITEMS} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 16, paddingBottom: 32 }}>
 
-        {/* Communication Tips */}
         <Text style={styles.sectionLabel}>Communication tips</Text>
         <View style={styles.card}>
           {tipsLoading ? (
-            <View style={styles.loadingBox}><ActivityIndicator color={ACCENT} /></View>
+            <View style={styles.skeletonBox}>
+              <SkeletonBlock height={18} width="90%" />
+              <SkeletonBlock height={18} width="75%" />
+              <SkeletonBlock height={18} width="85%" />
+            </View>
           ) : (
             <>
               {(tipExpanded ? tips : tips.slice(0, 3)).map((tip, i) => (
@@ -199,19 +217,22 @@ export default function DealingWithAuthorityPage() {
                 </View>
               ))}
               {!tipExpanded && tips.length > 3 && (
-                <TouchableOpacity onPress={markTipExpanded} activeOpacity={0.7} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
-                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13, color: ACCENT }}>Show all tips ∨</Text>
+                <TouchableOpacity onPress={markTipExpanded} activeOpacity={0.7} style={styles.showAllBtn}>
+                  <Text style={styles.showAllText}>Show all tips ∨</Text>
                 </TouchableOpacity>
               )}
             </>
           )}
         </View>
 
-        {/* Recommended Books */}
         <Text style={styles.sectionLabel}>Recommended books</Text>
         <View style={styles.card}>
           {booksLoading ? (
-            <View style={styles.loadingBox}><ActivityIndicator color={ACCENT} /></View>
+            <View style={styles.skeletonBox}>
+              <SkeletonBlock height={72} />
+              <SkeletonBlock height={72} />
+              <SkeletonBlock height={72} />
+            </View>
           ) : (
             <>
               {books.length > 0 && (
@@ -223,7 +244,9 @@ export default function DealingWithAuthorityPage() {
                 const isLast = i === books.length - 1
                 return (
                   <View key={i} style={[styles.bookRow, isLast && { borderBottomWidth: 0 }]}>
-                    <Text style={styles.bookEmoji}>{book.emoji}</Text>
+                    <View style={styles.bookIconWrap}>
+                      <Ionicons name="book-outline" size={20} color={c.secondary} />
+                    </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.bookTitle}>{book.title}</Text>
                       <Text style={styles.bookAuthor}>{book.author}</Text>
@@ -232,7 +255,10 @@ export default function DealingWithAuthorityPage() {
                         {BOOK_STATUSES.map(s => (
                           <TouchableOpacity
                             key={s}
-                            style={[styles.statusChip, { borderColor: s === status ? statusColor : c.border, backgroundColor: s === status ? `${statusColor}15` : 'transparent' }]}
+                            style={[styles.statusChip, {
+                              borderColor: s === status ? statusColor : c.border,
+                              backgroundColor: s === status ? `${statusColor}15` : 'transparent',
+                            }]}
                             onPress={() => cycleStatus(book.title)}
                             activeOpacity={0.7}
                           >
@@ -248,7 +274,6 @@ export default function DealingWithAuthorityPage() {
           )}
         </View>
 
-        {/* Scripts */}
         <Text style={styles.sectionLabel}>Cross-generational scripts</Text>
         <View style={styles.card}>
           {SCRIPTS.map((s, i) => (
@@ -260,9 +285,8 @@ export default function DealingWithAuthorityPage() {
           ))}
         </View>
 
-        {/* Challenges */}
         <Text style={styles.sectionLabel}>Challenges</Text>
-        <ChallengeSection topic={TOPIC} challenges={CHALLENGES} accentColor={ACCENT} onProgressChange={refreshProgress} />
+        <ChallengeSection topic={TOPIC} challenges={CHALLENGES} onProgressChange={refreshProgress} />
       </ScrollView>
     </View>
   )
@@ -270,10 +294,10 @@ export default function DealingWithAuthorityPage() {
 
 const FALLBACK_TIPS = [
   'Lead with curiosity, not requests. Ask people about their path before asking for anything.',
-  'Use "I" statements when receiving feedback: "I want to make sure I understand what you mean by..."',
-  'Disagree respectfully by first acknowledging: "That\'s a fair point. I\'d also consider..."',
-  'End every interaction with a clear next step so there\'s no ambiguity.',
-  'Ask for a meeting, not a favor. "Could we schedule 15 minutes?" feels easier to say yes to.',
+  "Use \"I\" statements when receiving feedback: \"I want to make sure I understand what you mean by...\"",
+  "Disagree respectfully by first acknowledging: \"That's a fair point. I'd also consider...\"",
+  "End every interaction with a clear next step so there's no ambiguity.",
+  "Ask for a meeting, not a favor. \"Could we schedule 15 minutes?\" feels easier to say yes to.",
   'Follow up after every important conversation with a short summary of what was discussed.',
 ]
 

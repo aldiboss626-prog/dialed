@@ -12,9 +12,11 @@ import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { roleLabel } from './(tabs)/orbit'
 import { ContactAvatar } from '@/components/ContactAvatar'
+import { contactHealthScore, healthBand, healthColor, healthLabel } from '@/lib/health'
+import type { HealthBandKey } from '@/lib/health'
 import type { Contact } from '@/types'
 
-type HealthFilter = 'all' | 'overdue' | 'due-soon' | 'good'
+type Band = 'all' | HealthBandKey
 
 function makeStyles(c: ColorPalette) {
   return StyleSheet.create({
@@ -53,7 +55,7 @@ function makeStyles(c: ColorPalette) {
       paddingHorizontal: Spacing.lg, paddingVertical: 8,
       backgroundColor: c.background,
     },
-    sectionLetter: { fontFamily: FontFamily.display, fontSize: 16, color: c.gold },
+    sectionLetter: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary },
     row: {
       flexDirection: 'row', alignItems: 'center', gap: 14,
       paddingHorizontal: Spacing.lg, paddingVertical: 12,
@@ -68,20 +70,22 @@ function makeStyles(c: ColorPalette) {
     rowInfo: { flex: 1 },
     rowName: { fontFamily: FontFamily.display, fontSize: 16, color: c.primary },
     rowRole: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginTop: 1 },
-    daysWrap: { alignItems: 'flex-end', gap: 4 },
-    daysText: { fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary },
-    dot: { width: 8, height: 8, borderRadius: 4, alignSelf: 'flex-end' },
+    statusChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radius.full, flexShrink: 0 },
+    statusChipText: { fontFamily: FontFamily.sansMedium, fontSize: 11 },
     emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
     emptyText: { fontFamily: FontFamily.sans, fontSize: 15, color: c.tertiary },
   })
 }
 
-const HEALTH_CHIPS: { key: HealthFilter; label: string }[] = [
+const BAND_CHIPS: { key: Band; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'overdue', label: 'Needs Attention' },
-  { key: 'due-soon', label: 'Strong' },
+  { key: 'strong', label: 'Strong' },
   { key: 'good', label: 'Good' },
+  { key: 'needs-attention', label: 'Needs attention' },
+  { key: 'critical', label: 'Critical' },
 ]
+
+const VALID_BANDS: Band[] = ['all', 'strong', 'good', 'needs-attention', 'critical']
 
 export default function PeopleScreen() {
   const c = useColors()
@@ -93,7 +97,8 @@ export default function PeopleScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<HealthFilter>((params.filter as HealthFilter) ?? 'all')
+  const initialBand = VALID_BANDS.includes(params.filter as Band) ? (params.filter as Band) : 'all'
+  const [filter, setFilter] = useState<Band>(initialBand)
   const scrollRef = useRef<ScrollView>(null)
 
   useEffect(() => {
@@ -119,7 +124,7 @@ export default function PeopleScreen() {
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
     return contacts
-      .filter(ct => filter === 'all' || ct.status === filter)
+      .filter(ct => filter === 'all' || healthBand(contactHealthScore(ct)) === filter)
       .filter(ct => !q || ct.name.toLowerCase().includes(q) || roleLabel(ct).toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [contacts, filter, query])
@@ -135,12 +140,11 @@ export default function PeopleScreen() {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [filtered])
 
-  const chipCounts = useMemo(() => ({
-    all: contacts.length,
-    overdue: contacts.filter(c => c.status === 'overdue').length,
-    'due-soon': contacts.filter(c => c.status === 'due-soon').length,
-    good: contacts.filter(c => c.status === 'good').length,
-  }), [contacts])
+  const chipCounts = useMemo(() => {
+    const counts: Record<Band, number> = { all: contacts.length, strong: 0, good: 0, 'needs-attention': 0, critical: 0 }
+    for (const ct of contacts) counts[healthBand(contactHealthScore(ct))]++
+    return counts
+  }, [contacts])
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -174,7 +178,7 @@ export default function PeopleScreen() {
       </View>
 
       <View style={styles.chipsRow}>
-        {HEALTH_CHIPS.map(item => {
+        {BAND_CHIPS.map(item => {
           const active = filter === item.key
           const count = chipCounts[item.key]
           return (
@@ -210,7 +214,8 @@ export default function PeopleScreen() {
                 <Text style={styles.sectionLetter}>{letter}</Text>
               </View>
               {people.map((ct) => {
-                const dotColor = ct.status === 'overdue' ? c.overdue : ct.status === 'due-soon' ? c.warning : c.success
+                const score = contactHealthScore(ct)
+                const color = healthColor(c, score)
                 return (
                   <TouchableOpacity
                     key={ct.id}
@@ -223,16 +228,15 @@ export default function PeopleScreen() {
                       <Text style={styles.rowName}>{ct.name}</Text>
                       {!!roleLabel(ct) && <Text style={styles.rowRole}>{roleLabel(ct)}</Text>}
                     </View>
-                    <View style={styles.daysWrap}>
-                      <Text style={styles.daysText}>{ct.days_since_contact}d</Text>
-                      <View style={[styles.dot, { backgroundColor: dotColor }]} />
+                    <View style={[styles.statusChip, { backgroundColor: color + '18' }]}>
+                      <Text style={[styles.statusChipText, { color }]}>{healthLabel(score)}</Text>
                     </View>
                   </TouchableOpacity>
                 )
               })}
             </View>
           ))}
-          <View style={{ height: 32 }} />
+          <View style={{ height: 112 }} />
         </ScrollView>
       )}
     </SafeAreaView>

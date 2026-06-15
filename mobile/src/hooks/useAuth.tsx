@@ -17,6 +17,7 @@ function sessionToUser(supaUser: any): User {
     id: supaUser.id,
     email: supaUser.email ?? '',
     name: supaUser.user_metadata?.name ?? supaUser.email ?? '',
+    tier: supaUser.user_metadata?.tier ?? 'free',
   }
 }
 

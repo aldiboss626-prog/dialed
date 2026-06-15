@@ -17,6 +17,7 @@ import {
 } from '@expo-google-fonts/cormorant-garamond'
 import { AuthProvider } from '@/hooks/useAuth'
 import { ThemeProvider } from '@/hooks/ThemeContext'
+import { DevProProvider } from '@/hooks/useDevPro'
 import { GlobalActionsOverlay } from '@/components/GlobalActions'
 
 SplashScreen.preventAutoHideAsync()
@@ -25,6 +26,8 @@ SplashScreen.preventAutoHideAsync()
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -48,16 +51,25 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
+        <DevProProvider>
         <AuthProvider>
           <View style={{ flex: 1 }}>
-            <Stack screenOptions={{ headerShown: false, stackAnimation: 'ios_from_right' }}>
-              <Stack.Screen name="(tabs)" options={{ stackAnimation: 'fade' }} />
-              <Stack.Screen name="login" options={{ stackAnimation: 'fade' }} />
-              <Stack.Screen name="contact/[id]" options={{ stackAnimation: 'ios_from_right' }} />
+            <Stack screenOptions={{ headerShown: false, animation: 'ios_from_right' }}>
+              <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+              <Stack.Screen name="landing" options={{ animation: 'fade' }} />
+              <Stack.Screen name="login" options={{ animation: 'fade' }} />
+              <Stack.Screen name="contact/[id]" options={{ animation: 'ios_from_right' }} />
+              <Stack.Screen name="reply" options={{ animation: 'ios_from_right', gestureEnabled: true }} />
+              <Stack.Screen name="search" options={{ animation: 'ios_from_right' }} />
+              <Stack.Screen name="settings" options={{ animation: 'ios_from_right', gestureEnabled: true }} />
+              <Stack.Screen name="upgrade" options={{ animation: 'fade', gestureEnabled: false }} />
+              <Stack.Screen name="onboarding" options={{ animation: 'fade', gestureEnabled: false }} />
+              <Stack.Screen name="permissions" options={{ animation: 'fade', gestureEnabled: false }} />
             </Stack>
             <GlobalActionsOverlay />
           </View>
         </AuthProvider>
+        </DevProProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   )

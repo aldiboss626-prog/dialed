@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dialed — Onboarding</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #E8E2D8; -webkit-font-smoothing: antialiased; }
+  #root { min-height: 100vh; }
+  button { font-family: inherit; }
+  input { font-family: inherit; }
+  @keyframes onb-fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes onb-pop { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: scale(1); } }
+  @keyframes onb-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+  @keyframes onb-rise { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes onb-step-fwd { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes onb-step-back { from { opacity: 0; transform: translateX(-22px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes onb-checkpop { 0% { transform: scale(0.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+  @keyframes onb-drift { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(24px, 18px) scale(1.12); } }
+  @keyframes onb-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+  @keyframes onb-twinkle { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  @keyframes onb-corepulse { 0%, 100% { box-shadow: 0 14px 44px rgba(37,99,235,0.55); } 50% { box-shadow: 0 14px 60px rgba(37,99,235,0.85); } }
+  @keyframes onb-reveal { from { transform: translateY(16px); } to { transform: translateY(0); } }
+  @keyframes onb-enter-fwd { from { transform: translateX(48px) scale(0.99); } to { transform: translateX(0) scale(1); } }
+  @keyframes onb-enter-back { from { transform: translateX(-48px) scale(0.99); } to { transform: translateX(0) scale(1); } }
+  @keyframes onb-page-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes onb-haloexpand { 0% { transform: scale(0.7); opacity: 0.8; } 70% { opacity: 0.1; } 100% { transform: scale(1.25); opacity: 0; } }
+  @keyframes onb-seal { 0%, 100% { transform: rotate(-7deg) scale(1); } 50% { transform: rotate(-3deg) scale(1.05); } }
+  @keyframes onb-ctaglow { 0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); } 50% { box-shadow: 0 0 0 6px rgba(37,99,235,0.16); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="dialed-kit.jsx"></script>
+<script type="text/babel" src="permission-graphics.jsx"></script>
+<script type="text/babel" src="onboarding-kit.jsx"></script>
+<script type="text/babel" src="onboarding-welcome.jsx"></script>
+<script type="text/babel" src="onboarding-questions.jsx"></script>
+<script type="text/babel" src="onboarding-pain.jsx"></script>
+<script type="text/babel" src="onboarding-plan.jsx"></script>
+<script type="text/babel" src="onboarding-paywall.jsx"></script>
+<script type="text/babel" src="onboarding-app.jsx"></script>
+</body>
+</html>

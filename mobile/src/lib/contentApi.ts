@@ -1,4 +1,4 @@
-const SERVER = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001'
+import { getApiUrl } from './api'
 
 export interface Challenge {
   challenge: string
@@ -29,7 +29,7 @@ export async function generateChallenge(stats: {
   totalContacts: number
   topContactName?: string
 }): Promise<Challenge> {
-  const res = await fetch(`${SERVER}/api/content/challenge`, {
+  const res = await fetch(`${getApiUrl()}/api/content/challenge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(stats),
@@ -39,11 +39,36 @@ export async function generateChallenge(stats: {
 }
 
 export async function generateArticle(topic: ArticleTopic, title?: string): Promise<Article> {
-  const res = await fetch(`${SERVER}/api/content/article`, {
+  const res = await fetch(`${getApiUrl()}/api/content/article`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ topic, title }),
   })
   if (!res.ok) throw new Error('Failed to generate article')
+  return res.json()
+}
+
+export type ReplyIntent = 'professional' | 'accept' | 'decline' | 'details'
+
+export interface DraftedReply {
+  subject: string
+  reply: string
+}
+
+export async function generateReply(input: {
+  emailText?: string
+  imageBase64?: string
+  contactName?: string
+  contactRole?: string
+  relationship?: string
+  senderName?: string
+  intent: ReplyIntent
+}): Promise<DraftedReply> {
+  const res = await fetch(`${getApiUrl()}/api/content/draft-reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error('Failed to draft reply')
   return res.json()
 }

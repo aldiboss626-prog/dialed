@@ -10,7 +10,7 @@ export const TOKEN_KEY = 'dialed_jwt'
 // Derive the Express server URL from Expo Go's Metro bundler host.
 // On a physical device, Constants.expoConfig.hostUri is "192.168.x.x:8081".
 // We strip the port and point at :3001 where our server runs.
-function getApiUrl(): string {
+export function getApiUrl(): string {
   if (__DEV__) {
     const hostUri = Constants.expoConfig?.hostUri ?? ''
     const host = hostUri.split(':')[0]

@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
-  View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, ActivityIndicator, Alert, Linking,
+  View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet,
+  ActivityIndicator, Alert, Linking, PanResponder,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useAuth } from '@/hooks/useAuth'
+import { usePro } from '@/hooks/usePro'
+import { useDevPro } from '@/hooks/useDevPro'
 import { FontFamily, Radius, Spacing } from '@/constants/theme'
+import { Ionicons } from '@expo/vector-icons'
 import { useColors, useThemeMode } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { useTabBarPadding } from '@/components/FloatingTabBar'
@@ -17,6 +21,7 @@ import type { GmailStatus, ImportCandidate } from '@/types'
 
 export const TITLE_PREF_KEY = 'dialed_title_pref'
 export const TITLE_OPTIONS = ['', 'Mr.', 'Ms.', 'Mrs.', 'Dr.', 'Master', 'Coach']
+const NOTIFS_KEY = 'dialed_notif_prefs'
 
 const REL_CADENCES = [
   { type: 'Recruiter', days: 7 },
@@ -91,6 +96,28 @@ function makeStyles(c: ColorPalette) {
       flex: 1, borderWidth: 1, borderColor: c.gold, borderRadius: Radius.full,
       paddingVertical: 8, alignItems: 'center', justifyContent: 'center',
     },
+    proCard: {
+      backgroundColor: c.surface, borderRadius: Radius.card,
+      padding: 16, marginBottom: 24,
+      borderWidth: 1, borderColor: c.gold + '40',
+    },
+    proBadge: {
+      alignSelf: 'flex-start', backgroundColor: c.gold + '18',
+      borderWidth: 1, borderColor: c.gold + '40',
+      borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 4,
+      marginBottom: 10,
+    },
+    proBadgeText: { fontFamily: FontFamily.sansMedium, fontSize: 10, color: c.gold, letterSpacing: 1.5 },
+    proUpgradeBtn: {
+      backgroundColor: c.gold, borderRadius: Radius.card,
+      paddingVertical: 12, alignItems: 'center', marginTop: 12,
+    },
+    proUpgradeBtnText: { fontFamily: FontFamily.display, fontSize: 15, color: '#fff' },
+    proManageBtn: {
+      borderWidth: 1, borderColor: c.border, borderRadius: Radius.card,
+      paddingVertical: 12, alignItems: 'center', marginTop: 8,
+    },
+    proManageBtnText: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary },
   })
 }
 
@@ -125,6 +152,8 @@ export default function SettingsScreen() {
   const router = useRouter()
   const c = useColors()
   const styles = makeStyles(c)
+  const { isPro, openUpgrade } = usePro()
+  const { devProOverride, setDevProOverride } = useDevPro()
   const { mode, toggle: toggleTheme } = useThemeMode()
   const tabBarPadding = useTabBarPadding()
   const [gmail, setGmail] = useState<GmailStatus | null>(null)
@@ -145,6 +174,11 @@ export default function SettingsScreen() {
   useEffect(() => {
     setGmail({ connected: false, email: '', lastSynced: '' })
     AsyncStorage.getItem(TITLE_PREF_KEY).then(v => setTitlePref(v ?? '')).catch(() => {})
+    AsyncStorage.getItem(NOTIFS_KEY).then(v => {
+      if (v) {
+        try { setNotifs(JSON.parse(v)) } catch {}
+      }
+    }).catch(() => {})
   }, [])
 
   function selectTitle(t: string) {
@@ -225,13 +259,42 @@ export default function SettingsScreen() {
 
   const initials = user?.name?.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2) ?? '?'
   function toggle(key: keyof typeof notifs) {
-    setNotifs(prev => ({ ...prev, [key]: !prev[key] }))
+    setNotifs(prev => {
+      const next = { ...prev, [key]: !prev[key] }
+      AsyncStorage.setItem(NOTIFS_KEY, JSON.stringify(next)).catch(() => {})
+      return next
+    })
   }
+
+  // Swipe right to dismiss — ScrollView only captures vertical touches so
+  // a clearly horizontal pan (dx > abs(dy)*2) passes through safely.
+  const swipePan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gs) =>
+        gs.dx > 15 && Math.abs(gs.dx) > Math.abs(gs.dy) * 2,
+      onPanResponderRelease: (_, gs) => {
+        if (gs.dx > 80 || gs.vx > 0.4) router.back()
+      },
+    })
+  ).current
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingBottom: tabBarPadding }]}>
-        <Text style={styles.title}>Settings</Text>
+      <View style={{ flex: 1 }} {...swipePan.panHandlers}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingBottom: tabBarPadding + 64 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <Text style={styles.title}>Settings</Text>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+            style={{
+              width: 36, height: 36, borderRadius: 18,
+              backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="close" size={20} color={c.secondary} />
+          </TouchableOpacity>
+        </View>
 
         <SectionLabel label="ACCOUNT" styles={styles} />
         <View style={styles.accountCard}>
@@ -245,12 +308,16 @@ export default function SettingsScreen() {
         </View>
 
         <SectionLabel label="APPEARANCE" styles={styles} />
-        <TouchableOpacity style={[styles.card, { paddingVertical: 14 }]} onPress={toggleTheme} activeOpacity={0.75}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={styles.rowLabel}>{mode === 'dark' ? 'Dark Mode' : 'Cal AI Style'}</Text>
-            <Text style={styles.rowSub}>Tap to switch</Text>
-          </View>
-        </TouchableOpacity>
+        <View style={styles.card}>
+          <ToggleRow
+            label="Dark Mode"
+            sub={mode === 'dark' ? 'Currently using dark theme' : 'Currently using Cal AI warm style'}
+            enabled={mode === 'dark'}
+            onToggle={toggleTheme}
+            last
+            styles={styles} c={c}
+          />
+        </View>
 
         <SectionLabel label="GREETING TITLE" styles={styles} />
         <View style={styles.card}>
@@ -382,6 +449,40 @@ export default function SettingsScreen() {
           />
         </View>
 
+        <SectionLabel label="MEMBERSHIP" styles={styles} />
+        <View style={styles.proCard}>
+          <View style={styles.proBadge}>
+            <Text style={styles.proBadgeText}>{isPro ? 'PRO' : 'FREE'}</Text>
+          </View>
+          <Text style={styles.rowLabel}>{isPro ? 'Dialed Pro' : 'Free Plan'}</Text>
+          <Text style={[styles.rowSub, { marginTop: 4 }]}>
+            {isPro
+              ? 'Gmail sync, escalation, AI tools, and full analytics are active.'
+              : 'Upgrade to unlock Gmail sync, AI tools, analytics, and escalating reminders.'}
+          </Text>
+          {isPro ? (
+            <TouchableOpacity style={styles.proManageBtn} activeOpacity={0.7}>
+              <Text style={styles.proManageBtnText}>Manage Subscription</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.proUpgradeBtn} onPress={openUpgrade} activeOpacity={0.85}>
+              <Text style={styles.proUpgradeBtnText}>Upgrade to Pro</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <SectionLabel label="DEV MODE" styles={styles} />
+        <View style={styles.card}>
+          <ToggleRow
+            label="Force Pro Access"
+            sub="Overrides your real tier — for testing only"
+            enabled={devProOverride}
+            onToggle={() => setDevProOverride(!devProOverride)}
+            last
+            styles={styles} c={c}
+          />
+        </View>
+
         <TouchableOpacity style={styles.signOutBtn} onPress={handleLogout} activeOpacity={0.7}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
@@ -396,6 +497,7 @@ export default function SettingsScreen() {
         onClose={() => setImportSource(null)}
         onImport={handleConfirmImport}
       />
+      </View>
     </SafeAreaView>
   )
 }

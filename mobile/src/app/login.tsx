@@ -5,8 +5,10 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
+import { ONBOARDED_KEY } from '@/app/onboarding'
 import { FontFamily, Radius, Spacing } from '@/constants/theme'
 import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
@@ -64,7 +66,8 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
-      if (mode === 'register') {
+      const isNewUser = mode === 'register'
+      if (isNewUser) {
         const { error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
@@ -73,7 +76,12 @@ export default function LoginScreen() {
         if (error) throw new Error(error.message)
       }
       await login(email.trim(), password)
-      router.replace('/(tabs)/home?welcome=1')
+      if (isNewUser) {
+        router.replace('/permissions' as any)
+      } else {
+        const onboarded = await AsyncStorage.getItem(ONBOARDED_KEY)
+        router.replace(onboarded ? '/(tabs)/home?welcome=1' : '/onboarding')
+      }
     } catch (err: unknown) {
       Alert.alert(
         mode === 'register' ? 'Registration failed' : 'Login failed',
@@ -156,9 +164,6 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {mode === 'login' && (
-            <Text style={styles.demo}>Demo: alex@miami.edu / dialed123</Text>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

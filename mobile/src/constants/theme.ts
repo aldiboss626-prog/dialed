@@ -76,7 +76,9 @@ export const Spacing = {
 export const Radius = {
   sm: 8,
   md: 14,
+  lg: 18,
   card: 18,
+  xl: 24,
   sheet: 24,
   full: 999,
 } as const

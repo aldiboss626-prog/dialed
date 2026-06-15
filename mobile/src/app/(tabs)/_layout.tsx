@@ -1,27 +1,16 @@
 import { Tabs } from 'expo-router'
-import { FloatingTabBar } from '@/components/FloatingTabBar'
-
-const TABS = [
-  { name: 'home',          title: 'Home' },
-  { name: 'orbit',         title: 'Network' },
-  { name: 'opportunities', title: 'Opps' },
-  { name: 'tracker',       title: 'Tracker' },
-  { name: 'settings',      title: 'Settings' },
-]
 
 export default function TabLayout() {
   return (
     <Tabs
-      tabBar={props => <FloatingTabBar {...props} />}
+      tabBar={() => null}
       screenOptions={{ headerShown: false }}
     >
-      {TABS.map(tab => (
-        <Tabs.Screen
-          key={tab.name}
-          name={tab.name}
-          options={{ title: tab.title }}
-        />
-      ))}
+      <Tabs.Screen name="home" options={{ title: 'Home' }} />
+      {/* orbit / opportunities / tracker kept as files but not exposed in UI */}
+      <Tabs.Screen name="orbit" options={{ href: null }} />
+      <Tabs.Screen name="opportunities" options={{ href: null }} />
+      <Tabs.Screen name="tracker" options={{ href: null }} />
     </Tabs>
   )
 }

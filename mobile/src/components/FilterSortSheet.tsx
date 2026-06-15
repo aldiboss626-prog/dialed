@@ -36,8 +36,8 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 
 const HEALTH_OPTIONS: { value: HealthFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'overdue', label: 'Needs Attention' },
-  { value: 'due-soon', label: 'Strong' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'due-soon', label: 'Due soon' },
   { value: 'good', label: 'Good' },
 ]
 

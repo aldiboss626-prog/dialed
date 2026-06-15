@@ -3,6 +3,11 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+function parseJson(text) {
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  return JSON.parse(cleaned);
+}
+
 const TOPIC_PROMPTS = {
   'networking-101': 'networking fundamentals for college students — how to introduce yourself, start conversations, and follow up',
   'workplace-etiquette': 'professional workplace etiquette — emails, meetings, dress code, office politics, and first impressions',
@@ -39,8 +44,7 @@ Return exactly this JSON shape:
       }],
     });
 
-    const text = response.content[0].text.trim();
-    const data = JSON.parse(text);
+    const data = parseJson(response.content[0].text);
     res.json(data);
   } catch (err) {
     console.error('Content challenge error:', err);
@@ -73,8 +77,7 @@ Return exactly this JSON shape:
       }],
     });
 
-    const text = response.content[0].text.trim();
-    const data = JSON.parse(text);
+    const data = parseJson(response.content[0].text);
     res.json(data);
   } catch (err) {
     console.error('Content article error:', err);
@@ -111,7 +114,7 @@ router.post('/outfit-check', async (req, res) => {
       }],
     });
 
-    const data = JSON.parse(response.content[0].text.trim());
+    const data = parseJson(response.content[0].text);
     res.json(data);
   } catch (err) {
     console.error('Outfit check error:', err);
@@ -146,7 +149,7 @@ Return exactly this JSON:
       }],
     });
 
-    const data = JSON.parse(response.content[0].text.trim());
+    const data = parseJson(response.content[0].text);
     res.json(data);
   } catch (err) {
     console.error('Resume copy error:', err);
@@ -179,7 +182,7 @@ Return exactly this JSON:
       }],
     });
 
-    const data = JSON.parse(response.content[0].text.trim());
+    const data = parseJson(response.content[0].text);
     res.json(data);
   } catch (err) {
     console.error('Company plan error:', err);
@@ -211,7 +214,7 @@ Return exactly this JSON:
       }],
     });
 
-    const data = JSON.parse(response.content[0].text.trim());
+    const data = parseJson(response.content[0].text);
     res.json(data);
   } catch (err) {
     console.error('Venue suggestions error:', err);
@@ -240,7 +243,7 @@ Return exactly this JSON:
       }],
     });
 
-    const data = JSON.parse(response.content[0].text.trim());
+    const data = parseJson(response.content[0].text);
     res.json(data);
   } catch (err) {
     console.error('Books error:', err);
@@ -273,11 +276,91 @@ Return exactly this JSON:
       }],
     });
 
-    const data = JSON.parse(response.content[0].text.trim());
+    const data = parseJson(response.content[0].text);
     res.json(data);
   } catch (err) {
     console.error('LinkedIn audit error:', err);
     res.status(500).json({ error: 'Failed to audit profile' });
+  }
+});
+
+// POST /api/content/draft-reply — read an email (pasted text OR screenshot) and write a reply
+const REPLY_INTENTS = {
+  professional: 'Write a warm, professional response that moves the conversation forward.',
+  accept: 'Accept or agree to what they are proposing, and ask any clarifying question needed to take the next step.',
+  decline: 'Politely and graciously decline or push back, while keeping the relationship warm and leaving the door open.',
+  details: 'Respond positively but ask for the specific additional details or information needed before committing.',
+};
+
+router.post('/draft-reply', async (req, res) => {
+  const {
+    emailText = '',
+    imageBase64 = '',
+    contactName = 'them',
+    contactRole = '',
+    relationship = '',
+    senderName = '',
+    intent = 'professional',
+  } = req.body;
+
+  if (!emailText.trim() && !imageBase64) {
+    return res.status(400).json({ error: 'Provide emailText or imageBase64' });
+  }
+
+  const intentLine = REPLY_INTENTS[intent] || REPLY_INTENTS.professional;
+  const who = [contactName, contactRole && `(${contactRole})`, relationship && `— your ${relationship}`]
+    .filter(Boolean).join(' ');
+
+  const instructions = `You are helping ${senderName || 'a college student'} reply to an email from ${who}.
+
+Goal for this reply: ${intentLine}
+
+Rules:
+- Match the tone and formality of the original email.
+- Sound human and natural — write in the sender's own voice, not corporate boilerplate.
+- Be concise (3-6 sentences). No placeholder brackets like [Name] unless truly unavoidable.
+- Do not invent specific facts, dates, or commitments that weren't in the original email.
+- Ready to send as-is.
+
+Return exactly this JSON:
+{
+  "subject": "the reply subject line, prefixed with 'Re: ' if appropriate",
+  "reply": "the full email body, including a greeting and sign-off"
+}`;
+
+  try {
+    let response;
+    if (imageBase64) {
+      // Vision: read the email from a screenshot, then draft the reply
+      response = await client.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 700,
+        system: 'You read an email from a screenshot and draft a reply. Always respond with valid JSON only — no markdown, no extra text.',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
+            { type: 'text', text: `The screenshot above is an email thread. Read it, then draft a reply.\n\n${instructions}` },
+          ],
+        }],
+      });
+    } else {
+      response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 700,
+        system: 'You draft email replies. Always respond with valid JSON only — no markdown, no extra text.',
+        messages: [{
+          role: 'user',
+          content: `Here is the email to reply to:\n"""\n${emailText}\n"""\n\n${instructions}`,
+        }],
+      });
+    }
+
+    const data = parseJson(response.content[0].text);
+    res.json(data);
+  } catch (err) {
+    console.error('Draft reply error:', err);
+    res.status(500).json({ error: 'Failed to draft reply' });
   }
 });
 

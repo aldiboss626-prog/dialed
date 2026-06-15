@@ -7,7 +7,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
 
 export function useTabBarPadding() {
   const insets = useSafeAreaInsets()
-  return Math.max(insets.bottom, 0) + 56 + 16
+  return Math.max(insets.bottom, 8)
 }
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name']

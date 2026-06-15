@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, ActivityIndicator, Alert,
+  TextInput, Alert,
 } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Clipboard from 'expo-clipboard'
+import { Ionicons } from '@expo/vector-icons'
 import { FontFamily, Radius, Spacing } from '@/constants/theme'
 import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { TopicPageHeader } from '@/components/learn/TopicPageHeader'
 import { ChallengeSection } from '@/components/learn/ChallengeSection'
+import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed } from '@/lib/learnProgress'
+import { usePro } from '@/hooks/usePro'
+import { getApiUrl } from '@/lib/api'
 
-const ACCENT = '#10B981'
 const TOPIC = 'career-exposure'
 const TOTAL_ITEMS = 5
 
@@ -39,9 +42,9 @@ interface CompanyEntry {
 }
 
 const CHALLENGES = [
-  { id: 'career-1', title: 'Add 3 companies to your pipeline', description: 'Find 3 companies you\'d genuinely want to work for and add them to your tracker.' },
+  { id: 'career-1', title: 'Add 3 companies to your pipeline', description: "Find 3 companies you'd genuinely want to work for and add them to your tracker." },
   { id: 'career-2', title: 'Update your resume with one new achievement', description: 'Add a specific result or project you completed recently — with numbers if possible.' },
-  { id: 'career-3', title: 'Research one company\'s culture before applying', description: 'Read their Glassdoor reviews, browse their LinkedIn, and find one thing that genuinely interests you.' },
+  { id: 'career-3', title: "Research one company's culture before applying", description: "Read their Glassdoor reviews, browse their LinkedIn, and find one thing that genuinely interests you." },
 ]
 
 function makeStyles(c: ColorPalette) {
@@ -63,20 +66,21 @@ function makeStyles(c: ColorPalette) {
     styleBtn: { flex: 1, paddingVertical: 10, borderRadius: Radius.md, alignItems: 'center', borderWidth: 1.5 },
     styleBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 11 },
     generateBtn: {
-      backgroundColor: ACCENT, borderRadius: Radius.full,
+      backgroundColor: c.primary, borderRadius: Radius.full,
       paddingVertical: 13, alignItems: 'center', marginTop: 14,
     },
-    generateBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: '#fff' },
-    loadingBox: { height: 60, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+    generateBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: c.surface },
+    skeletonBox: { gap: 8, paddingTop: 12 },
     resumeOutput: {
       backgroundColor: c.elevated, borderRadius: Radius.md, padding: 14, marginTop: 14,
     },
     resumeText: { fontFamily: 'DMSans-Regular', fontSize: 12, color: c.primary, lineHeight: 20 },
     copyBtn: {
-      alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 7,
-      borderRadius: Radius.full, backgroundColor: `${ACCENT}15`, marginTop: 10,
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 7,
+      borderRadius: Radius.full, backgroundColor: `${c.gold}15`, marginTop: 10,
     },
-    copyBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 12, color: ACCENT },
+    copyBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 12, color: c.gold },
     expRow: { marginTop: 12, gap: 8 },
     expBlock: { backgroundColor: c.elevated, borderRadius: Radius.md, padding: 12, gap: 6 },
     addRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
@@ -85,10 +89,10 @@ function makeStyles(c: ColorPalette) {
       fontFamily: FontFamily.sans, fontSize: 14, color: c.primary,
     },
     addBtn: {
-      backgroundColor: ACCENT, borderRadius: Radius.md,
+      backgroundColor: c.primary, borderRadius: Radius.md,
       paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center',
     },
-    addBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 14, color: '#fff' },
+    addBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 14, color: c.surface },
     companyRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.border },
     companyName: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: c.primary, marginBottom: 8 },
     companyMeta: { flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
@@ -101,12 +105,16 @@ function makeStyles(c: ColorPalette) {
     planBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: c.secondary },
     planBox: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: c.border },
     planStep: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-    stepNumCircle: { width: 22, height: 22, borderRadius: 11, backgroundColor: `${ACCENT}20`, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 },
-    stepNumText: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: ACCENT },
+    stepNumCircle: {
+      width: 22, height: 22, borderRadius: 11,
+      backgroundColor: `${c.gold}18`, alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0, marginTop: 2,
+    },
+    stepNumText: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: c.gold },
     planStepTitle: { fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.primary },
     planStepAction: { fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary, lineHeight: 17, marginTop: 2 },
     divider: { height: 1, backgroundColor: c.border, marginTop: 2 },
-    deleteBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radius.full, backgroundColor: `#DC262615` },
+    deleteBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radius.full, backgroundColor: '#DC262615' },
     deleteBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: '#DC2626' },
   })
 }
@@ -114,8 +122,8 @@ function makeStyles(c: ColorPalette) {
 export default function CareerExposurePage() {
   const c = useColors()
   const styles = makeStyles(c)
+  const { isPro, openUpgrade } = usePro()
 
-  // Resume builder
   const [targetRole, setTargetRole] = useState('')
   const [expLevel, setExpLevel] = useState<'Student' | 'New Grad' | '1-2yr'>('Student')
   const [experiences, setExperiences] = useState([
@@ -128,7 +136,6 @@ export default function CareerExposurePage() {
   const [generating, setGenerating] = useState(false)
   const [resumeText, setResumeText] = useState('')
 
-  // Company pipeline
   const [companies, setCompanies] = useState<CompanyEntry[]>([])
   const [newCompany, setNewCompany] = useState('')
   const [fetchingPlan, setFetchingPlan] = useState<string | null>(null)
@@ -155,12 +162,12 @@ export default function CareerExposurePage() {
   }
 
   async function generateResume() {
-    if (!targetRole.trim()) { Alert.alert('Add a target role', 'Enter the role you\'re targeting.'); return }
+    if (!isPro) { openUpgrade(); return }
+    if (!targetRole.trim()) { Alert.alert('Add a target role', "Enter the role you're targeting."); return }
     setGenerating(true)
     setResumeText('')
     try {
-      const SERVER = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001'
-      const res = await fetch(`${SERVER}/api/content/resume-copy`, {
+      const res = await fetch(`${getApiUrl()}/api/content/resume-copy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -178,7 +185,7 @@ export default function CareerExposurePage() {
       await markFeatureUsed(TOPIC, 'resume-generated')
       refreshProgress()
     } catch {
-      Alert.alert('Error', 'Couldn\'t generate resume. Make sure the server is running.')
+      Alert.alert('Error', "Couldn't generate resume. Make sure the server is running.")
     } finally {
       setGenerating(false)
     }
@@ -209,48 +216,47 @@ export default function CareerExposurePage() {
   }
 
   async function cycleStatus(id: string) {
-    const updated = companies.map(c => {
-      if (c.id !== id) return c
-      const idx = STATUSES.indexOf(c.status)
-      return { ...c, status: STATUSES[(idx + 1) % STATUSES.length] }
+    const updated = companies.map(co => {
+      if (co.id !== id) return co
+      const idx = STATUSES.indexOf(co.status)
+      return { ...co, status: STATUSES[(idx + 1) % STATUSES.length] }
     })
     await savePipeline(updated)
   }
 
   async function fetchPlan(id: string) {
-    const company = companies.find(c => c.id === id)
+    if (!isPro) { openUpgrade(); return }
+    const company = companies.find(co => co.id === id)
     if (!company) return
     if (company.plan) {
-      await savePipeline(companies.map(c => c.id === id ? { ...c, planExpanded: !c.planExpanded } : c))
+      await savePipeline(companies.map(co => co.id === id ? { ...co, planExpanded: !co.planExpanded } : co))
       return
     }
     setFetchingPlan(id)
     try {
-      const SERVER = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001'
-      const res = await fetch(`${SERVER}/api/content/company-plan`, {
+      const res = await fetch(`${getApiUrl()}/api/content/company-plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company: company.name, status: company.status }),
       })
       const data = await res.json()
-      await savePipeline(companies.map(c => c.id === id ? { ...c, plan: data.plan, planExpanded: true } : c))
+      await savePipeline(companies.map(co => co.id === id ? { ...co, plan: data.plan, planExpanded: true } : co))
     } catch {
-      Alert.alert('Error', 'Couldn\'t generate plan. Make sure the server is running.')
+      Alert.alert('Error', "Couldn't generate plan. Make sure the server is running.")
     } finally {
       setFetchingPlan(null)
     }
   }
 
   async function deleteCompany(id: string) {
-    await savePipeline(companies.filter(c => c.id !== id))
+    await savePipeline(companies.filter(co => co.id !== id))
   }
 
   return (
     <View style={styles.screen}>
-      <TopicPageHeader title="Career Exposure" accentColor={ACCENT} completedCount={completedCount} totalItems={TOTAL_ITEMS} />
+      <TopicPageHeader title="Career Exposure" completedCount={completedCount} totalItems={TOTAL_ITEMS} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 16, paddingBottom: 32 }}>
 
-        {/* Resume Builder */}
         <Text style={styles.sectionLabel}>Resume builder</Text>
         <View style={styles.card}>
           <Text style={styles.fieldLabel}>Target role</Text>
@@ -267,11 +273,15 @@ export default function CareerExposurePage() {
             {(['Student', 'New Grad', '1-2yr'] as const).map(lv => (
               <TouchableOpacity
                 key={lv}
-                style={[styles.styleBtn, { borderColor: expLevel === lv ? ACCENT : c.border, backgroundColor: expLevel === lv ? `${ACCENT}15` : 'transparent', flex: 1 }]}
+                style={[styles.styleBtn, {
+                  borderColor: expLevel === lv ? c.gold : c.border,
+                  backgroundColor: expLevel === lv ? `${c.gold}15` : 'transparent',
+                  flex: 1,
+                }]}
                 onPress={() => setExpLevel(lv)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.styleBtnText, { color: expLevel === lv ? ACCENT : c.secondary }]}>{lv}</Text>
+                <Text style={[styles.styleBtnText, { color: expLevel === lv ? c.gold : c.secondary }]}>{lv}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -299,11 +309,14 @@ export default function CareerExposurePage() {
             {STYLES.map(st => (
               <TouchableOpacity
                 key={st}
-                style={[styles.styleBtn, { borderColor: resumeStyle === st ? ACCENT : c.border, backgroundColor: resumeStyle === st ? `${ACCENT}15` : 'transparent' }]}
+                style={[styles.styleBtn, {
+                  borderColor: resumeStyle === st ? c.gold : c.border,
+                  backgroundColor: resumeStyle === st ? `${c.gold}15` : 'transparent',
+                }]}
                 onPress={() => setResumeStyle(st)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.styleBtnText, { color: resumeStyle === st ? ACCENT : c.secondary }]}>{st}</Text>
+                <Text style={[styles.styleBtnText, { color: resumeStyle === st ? c.gold : c.secondary }]}>{st}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -311,20 +324,27 @@ export default function CareerExposurePage() {
           <TouchableOpacity style={styles.generateBtn} onPress={generateResume} activeOpacity={0.85}>
             <Text style={styles.generateBtnText}>Generate resume</Text>
           </TouchableOpacity>
-          {generating && <View style={styles.loadingBox}><ActivityIndicator color={ACCENT} /></View>}
+          {generating && (
+            <View style={styles.skeletonBox}>
+              <SkeletonBlock height={14} width="90%" />
+              <SkeletonBlock height={14} width="75%" />
+              <SkeletonBlock height={14} width="85%" />
+              <SkeletonBlock height={14} width="60%" />
+            </View>
+          )}
           {resumeText ? (
             <View style={styles.resumeOutput}>
               <ScrollView style={{ maxHeight: 300 }} nestedScrollEnabled showsVerticalScrollIndicator>
                 <Text style={styles.resumeText}>{resumeText}</Text>
               </ScrollView>
               <TouchableOpacity style={styles.copyBtn} onPress={copyResume} activeOpacity={0.7}>
+                <Ionicons name="copy-outline" size={13} color={c.gold} />
                 <Text style={styles.copyBtnText}>Copy to clipboard</Text>
               </TouchableOpacity>
             </View>
           ) : null}
         </View>
 
-        {/* Company Pipeline */}
         <Text style={styles.sectionLabel}>Company pipeline</Text>
         <View style={styles.card}>
           {companies.length === 0 && (
@@ -349,7 +369,7 @@ export default function CareerExposurePage() {
                     disabled={fetchingPlan === co.id}
                   >
                     {fetchingPlan === co.id
-                      ? <ActivityIndicator size="small" color={c.secondary} style={{ width: 60 }} />
+                      ? <Text style={styles.planBtnText}>Loading...</Text>
                       : <Text style={styles.planBtnText}>{co.plan ? (co.planExpanded ? 'Hide plan' : 'View plan') : 'Get plan'}</Text>
                     }
                   </TouchableOpacity>
@@ -389,9 +409,8 @@ export default function CareerExposurePage() {
           </View>
         </View>
 
-        {/* Challenges */}
         <Text style={styles.sectionLabel}>Challenges</Text>
-        <ChallengeSection topic={TOPIC} challenges={CHALLENGES} accentColor={ACCENT} onProgressChange={refreshProgress} />
+        <ChallengeSection topic={TOPIC} challenges={CHALLENGES} onProgressChange={refreshProgress} />
       </ScrollView>
     </View>
   )

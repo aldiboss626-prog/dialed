@@ -41,6 +41,8 @@ interface Props {
   avatarUrl?: string | null
   size?: number
   borderRadius?: number
+  /** Solid background color for the initials circle (e.g. relationship type color) */
+  bgColor?: string
   /** Show a camera icon overlay + make tappable */
   editable?: boolean
   uploading?: boolean
@@ -52,6 +54,7 @@ export function ContactAvatar({
   avatarUrl,
   size = 56,
   borderRadius = 14,
+  bgColor,
   editable = false,
   uploading = false,
   onPress,
@@ -59,8 +62,11 @@ export function ContactAvatar({
   const c = useColors()
   const styles = makeStyles(c, size, borderRadius)
 
+  const bg = bgColor ?? (c.gold + '20')
+  const textColor = bgColor ? '#fff' : c.gold
+
   const inner = (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { backgroundColor: bg }]}>
       {avatarUrl ? (
         <Image
           source={{ uri: avatarUrl }}
@@ -69,7 +75,7 @@ export function ContactAvatar({
           transition={200}
         />
       ) : (
-        <Text style={styles.initialsText}>{initials(name)}</Text>
+        <Text style={[styles.initialsText, { color: textColor }]}>{initials(name)}</Text>
       )}
 
       {editable && !uploading && (

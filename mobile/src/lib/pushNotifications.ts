@@ -49,7 +49,7 @@ export async function scheduleContactReminders(contacts: Contact[]): Promise<voi
         sound: true,
         data: { contactId: ct.id },
       },
-      trigger: tomorrowAt9(),
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: tomorrowAt9() },
     })
   }
 
@@ -62,7 +62,7 @@ export async function scheduleContactReminders(contacts: Contact[]): Promise<voi
         sound: true,
         data: { contactId: ct.id },
       },
-      trigger: tomorrowAt9(),
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: tomorrowAt9() },
     })
   }
 }
@@ -97,7 +97,7 @@ export async function scheduleOppReminders(opps: Opportunity[]): Promise<void> {
           sound: true,
           data: { oppId: opp.id },
         },
-        trigger: tomorrowAt9(), // fires at 9am today if before 9am, else skipped
+        trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: tomorrowAt9() },
       })
     }
 
@@ -115,7 +115,7 @@ export async function scheduleOppReminders(opps: Opportunity[]): Promise<void> {
             sound: true,
             data: { oppId: opp.id },
           },
-          trigger: t,
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: t },
         })
       }
     }
@@ -134,7 +134,7 @@ export async function scheduleOppReminders(opps: Opportunity[]): Promise<void> {
             sound: true,
             data: { oppId: opp.id },
           },
-          trigger: t,
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: t },
         })
       }
     }
@@ -153,7 +153,7 @@ export async function scheduleOppReminders(opps: Opportunity[]): Promise<void> {
             sound: true,
             data: { oppId: opp.id },
           },
-          trigger: t,
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: t },
         })
       }
     }

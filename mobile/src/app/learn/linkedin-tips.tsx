@@ -1,40 +1,43 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, ActivityIndicator, Alert,
+  TextInput, Alert,
 } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Clipboard from 'expo-clipboard'
+import { Ionicons } from '@expo/vector-icons'
 import { FontFamily, Radius, Spacing } from '@/constants/theme'
 import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { TopicPageHeader } from '@/components/learn/TopicPageHeader'
 import { ChallengeSection } from '@/components/learn/ChallengeSection'
+import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed } from '@/lib/learnProgress'
+import { usePro } from '@/hooks/usePro'
+import { getApiUrl } from '@/lib/api'
 
-const ACCENT = '#0EA5E9'
 const TOPIC = 'linkedin-tips'
 const TOTAL_ITEMS = 5
 
 const TEMPLATES = [
   {
     scenario: 'Met at a shared event',
-    text: 'Hi [Name], it was great meeting you at [Event]! I really enjoyed our conversation about [topic]. I\'d love to stay connected on here — looking forward to following your work.',
+    text: "Hi [Name], it was great meeting you at [Event]! I really enjoyed our conversation about [topic]. I'd love to stay connected on here — looking forward to following your work.",
   },
   {
     scenario: 'Cold outreach to alumni',
-    text: 'Hi [Name], I came across your profile and noticed you studied [major] at [school] — I\'m a current student in the same program. I\'d love to hear about your path and what you\'d do differently. Would you be open to connecting?',
+    text: "Hi [Name], I came across your profile and noticed you studied [major] at [school] — I'm a current student in the same program. I'd love to hear about your path and what you'd do differently. Would you be open to connecting?",
   },
   {
     scenario: 'After an informational interview',
-    text: 'Hi [Name], thank you again for taking the time to speak with me last week. Our conversation about [specific topic] was really helpful and gave me a lot to think about. I\'d love to stay in touch.',
+    text: "Hi [Name], thank you again for taking the time to speak with me last week. Our conversation about [specific topic] was really helpful and gave me a lot to think about. I'd love to stay in touch.",
   },
 ]
 
 const CHALLENGES = [
   { id: 'li-1', title: 'Update your LinkedIn headline', description: 'Use the audit feedback to rewrite your headline. Make it specific and forward-looking, not just your current title.' },
-  { id: 'li-2', title: 'Send one personalized connection request', description: 'Find someone in your target field and send a note — reference something specific about their work.' },
-  { id: 'li-3', title: 'Comment thoughtfully on 3 posts', description: 'Don\'t just like. Leave a substantive comment on 3 posts in your industry this week.' },
+  { id: 'li-2', title: 'Send one personalized connection request', description: "Find someone in your target field and send a note — reference something specific about their work." },
+  { id: 'li-3', title: 'Comment thoughtfully on 3 posts', description: "Don't just like. Leave a substantive comment on 3 posts in your industry this week." },
 ]
 
 function makeStyles(c: ColorPalette) {
@@ -54,27 +57,28 @@ function makeStyles(c: ColorPalette) {
     },
     multiInput: { minHeight: 90, textAlignVertical: 'top' },
     auditBtn: {
-      backgroundColor: ACCENT, borderRadius: Radius.full,
+      backgroundColor: c.primary, borderRadius: Radius.full,
       paddingVertical: 13, alignItems: 'center',
     },
-    auditBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: '#fff' },
-    loadingBox: { height: 60, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+    auditBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: c.surface },
+    skeletonBox: { gap: 8, paddingTop: 12 },
     resultBox: { marginTop: 14, padding: 14, borderRadius: Radius.lg, backgroundColor: c.elevated },
-    resultLabel: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: ACCENT, marginBottom: 6, letterSpacing: 0.5 },
+    resultLabel: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: c.secondary, marginBottom: 6, letterSpacing: 0.5 },
     resultText: { fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary, lineHeight: 21, marginBottom: 10 },
     copyBtn: {
-      alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 7,
-      borderRadius: Radius.full, backgroundColor: `${ACCENT}15`,
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 7,
+      borderRadius: Radius.full, backgroundColor: `${c.gold}15`,
     },
-    copyBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 12, color: ACCENT },
-    templateScenario: { fontFamily: FontFamily.sansMedium, fontSize: 12, color: ACCENT, marginBottom: 6 },
+    copyBtnText: { fontFamily: FontFamily.sansMedium, fontSize: 12, color: c.gold },
+    templateScenario: { fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.secondary, marginBottom: 6 },
     templateText: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, lineHeight: 20, marginBottom: 10 },
     divider: { height: 1, backgroundColor: c.border, marginVertical: 12 },
     ideaChip: {
       paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radius.full,
-      backgroundColor: `${ACCENT}12`, marginRight: 8, marginBottom: 8,
+      backgroundColor: `${c.gold}12`, marginRight: 8, marginBottom: 8,
     },
-    ideaText: { fontFamily: FontFamily.sansMedium, fontSize: 13, color: ACCENT },
+    ideaText: { fontFamily: FontFamily.sansMedium, fontSize: 13, color: c.gold },
     ideasRow: { flexDirection: 'row', flexWrap: 'wrap' },
   })
 }
@@ -84,6 +88,7 @@ interface AuditResult { feedback: string; revisedHeadline: string; revisedSummar
 export default function LinkedInTipsPage() {
   const c = useColors()
   const styles = makeStyles(c)
+  const { isPro, openUpgrade } = usePro()
   const [headline, setHeadline] = useState('')
   const [summary, setSummary] = useState('')
   const [auditing, setAuditing] = useState(false)
@@ -100,6 +105,7 @@ export default function LinkedInTipsPage() {
   useEffect(() => { refreshProgress(); loadIdeas() }, [refreshProgress])
 
   async function loadIdeas() {
+    if (!isPro) { openUpgrade(); return }
     const cacheKey = 'dialed_li_ideas'
     try {
       const raw = await AsyncStorage.getItem(cacheKey)
@@ -111,14 +117,13 @@ export default function LinkedInTipsPage() {
 
     setIdeasLoading(true)
     try {
-      const SERVER = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001'
-      const res = await fetch(`${SERVER}/api/content/article`, {
+      const res = await fetch(`${getApiUrl()}/api/content/article`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: 'linkedin-tips', title: '5 content ideas for students on LinkedIn' }),
       })
       const data = await res.json()
-      const lines = ((data.intro ?? '') + '\n' + (data.body ?? '')).split(/\n|\.(?= )/).filter(l => l.trim().length > 15).slice(0, 5)
+      const lines = ((data.intro ?? '') + '\n' + (data.body ?? '')).split(/\n|\.(?= )/).filter((l: string) => l.trim().length > 15).slice(0, 5)
       setIdeas(lines.length >= 3 ? lines : FALLBACK_IDEAS)
       AsyncStorage.setItem(cacheKey, JSON.stringify({ data: lines, ts: Date.now() })).catch(() => {})
     } catch {
@@ -129,6 +134,7 @@ export default function LinkedInTipsPage() {
   }
 
   async function runAudit() {
+    if (!isPro) { openUpgrade(); return }
     if (!headline.trim() && !summary.trim()) {
       Alert.alert('Add some content', 'Enter your headline or summary to audit.')
       return
@@ -144,8 +150,7 @@ export default function LinkedInTipsPage() {
 
     setAuditing(true)
     try {
-      const SERVER = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001'
-      const res = await fetch(`${SERVER}/api/content/linkedin-audit`, {
+      const res = await fetch(`${getApiUrl()}/api/content/linkedin-audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ headline: headline.trim(), summary: summary.trim() }),
@@ -156,7 +161,7 @@ export default function LinkedInTipsPage() {
       refreshProgress()
       AsyncStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() })).catch(() => {})
     } catch {
-      Alert.alert('Error', 'Couldn\'t complete the audit. Make sure the server is running.')
+      Alert.alert('Error', "Couldn't complete the audit. Make sure the server is running.")
     } finally {
       setAuditing(false)
     }
@@ -171,10 +176,9 @@ export default function LinkedInTipsPage() {
 
   return (
     <View style={styles.screen}>
-      <TopicPageHeader title="LinkedIn Tips" accentColor={ACCENT} completedCount={completedCount} totalItems={TOTAL_ITEMS} />
+      <TopicPageHeader title="LinkedIn Tips" completedCount={completedCount} totalItems={TOTAL_ITEMS} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 16, paddingBottom: 32 }}>
 
-        {/* Profile Audit */}
         <Text style={styles.sectionLabel}>Profile audit</Text>
         <View style={styles.card}>
           <Text style={styles.inputLabel}>Current headline</Text>
@@ -197,21 +201,29 @@ export default function LinkedInTipsPage() {
           <TouchableOpacity style={styles.auditBtn} onPress={runAudit} activeOpacity={0.85}>
             <Text style={styles.auditBtnText}>Audit my profile</Text>
           </TouchableOpacity>
-          {auditing && <View style={styles.loadingBox}><ActivityIndicator color={ACCENT} /></View>}
+          {auditing && (
+            <View style={styles.skeletonBox}>
+              <SkeletonBlock height={16} width="90%" />
+              <SkeletonBlock height={16} width="70%" />
+              <SkeletonBlock height={16} width="80%" />
+            </View>
+          )}
           {auditResult && !auditing && (
             <View style={styles.resultBox}>
-              <Text style={styles.resultLabel}>FEEDBACK</Text>
+              <Text style={styles.resultLabel}>Feedback</Text>
               <Text style={styles.resultText}>{auditResult.feedback}</Text>
-              <Text style={styles.resultLabel}>REVISED HEADLINE</Text>
+              <Text style={styles.resultLabel}>Revised headline</Text>
               <Text style={styles.resultText}>{auditResult.revisedHeadline}</Text>
               <TouchableOpacity style={styles.copyBtn} onPress={() => copyText(auditResult.revisedHeadline, 'Headline')} activeOpacity={0.7}>
+                <Ionicons name="copy-outline" size={13} color={c.gold} />
                 <Text style={styles.copyBtnText}>Copy headline</Text>
               </TouchableOpacity>
               {auditResult.revisedSummary && (
                 <View style={{ marginTop: 12 }}>
-                  <Text style={styles.resultLabel}>REVISED SUMMARY</Text>
+                  <Text style={styles.resultLabel}>Revised summary</Text>
                   <Text style={styles.resultText}>{auditResult.revisedSummary}</Text>
                   <TouchableOpacity style={styles.copyBtn} onPress={() => copyText(auditResult.revisedSummary, 'Summary')} activeOpacity={0.7}>
+                    <Ionicons name="copy-outline" size={13} color={c.gold} />
                     <Text style={styles.copyBtnText}>Copy summary</Text>
                   </TouchableOpacity>
                 </View>
@@ -220,26 +232,29 @@ export default function LinkedInTipsPage() {
           )}
         </View>
 
-        {/* Connection Templates */}
         <Text style={styles.sectionLabel}>Connection request templates</Text>
         <View style={styles.card}>
           {TEMPLATES.map((t, i) => (
             <View key={i}>
               {i > 0 && <View style={styles.divider} />}
-              <Text style={styles.templateScenario}>{t.scenario.toUpperCase()}</Text>
+              <Text style={styles.templateScenario}>{t.scenario}</Text>
               <Text style={styles.templateText}>{t.text}</Text>
               <TouchableOpacity style={styles.copyBtn} onPress={() => copyText(t.text, 'Template')} activeOpacity={0.7}>
-                <Text style={styles.copyBtnText}>Copy template</Text>
+                <Ionicons name="copy-outline" size={13} color={c.gold} />
+                <Text style={styles.copyBtnText}>Copy</Text>
               </TouchableOpacity>
             </View>
           ))}
         </View>
 
-        {/* What to Post */}
         <Text style={styles.sectionLabel}>What to post</Text>
         <View style={styles.card}>
           {ideasLoading ? (
-            <View style={styles.loadingBox}><ActivityIndicator color={ACCENT} /></View>
+            <View style={styles.skeletonBox}>
+              <SkeletonBlock height={36} width="70%" borderRadius={999} />
+              <SkeletonBlock height={36} width="85%" borderRadius={999} />
+              <SkeletonBlock height={36} width="60%" borderRadius={999} />
+            </View>
           ) : (
             <View style={styles.ideasRow}>
               {ideas.map((idea, i) => (
@@ -251,9 +266,8 @@ export default function LinkedInTipsPage() {
           )}
         </View>
 
-        {/* Challenges */}
         <Text style={styles.sectionLabel}>Challenges</Text>
-        <ChallengeSection topic={TOPIC} challenges={CHALLENGES} accentColor={ACCENT} onProgressChange={refreshProgress} />
+        <ChallengeSection topic={TOPIC} challenges={CHALLENGES} onProgressChange={refreshProgress} />
       </ScrollView>
     </View>
   )

@@ -3,15 +3,20 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   RefreshControl, ActivityIndicator, useWindowDimensions,
 } from 'react-native'
-import Svg, { Path, Defs, LinearGradient as SvgGrad, Stop, Circle, Rect } from 'react-native-svg'
+import Svg, { Path } from 'react-native-svg'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
 import { contactsDb, oppsDb } from '@/lib/db'
 import { FontFamily, Radius } from '@/constants/theme'
 import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { useTabBarPadding } from '@/components/FloatingTabBar'
+import { HeaderBell } from '@/components/HeaderBell'
+import { usePro } from '@/hooks/usePro'
+import { LineChart } from '@/components/charts/LineChart'
+import { DonutChart } from '@/components/charts/DonutChart'
 import type { Contact, Opportunity } from '@/types'
 
 type DataSet = 'network' | 'opps'
@@ -40,6 +45,8 @@ interface NetAnalytics {
   orbitScore: number
   totalConnections: number
   activeConnections: number
+  overdueCount: number
+  dueSoonCount: number
   needsAttention: number
   dormant: number
   newThisMonth: number
@@ -60,6 +67,26 @@ function daysSince(dateStr: string) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000)
 }
 
+// Computes real health score for each past monthly period from contact data.
+// Shifts each contact's days_since_contact back N*30 days and re-applies scoring logic.
+// Contacts added after that reference point are excluded.
+function buildRealScoreHistory(contacts: Contact[], periods: number): number[] {
+  const daysPerPeriod = 30
+  return Array.from({ length: periods }, (_, i) => {
+    const daysAgo = (periods - 1 - i) * daysPerPeriod
+    const existing = contacts.filter(c => daysSince(c.created_at) >= daysAgo)
+    if (existing.length === 0) return 100
+    let overdue = 0, dueSoon = 0
+    for (const c of existing) {
+      const effectiveDays = Math.max(0, c.days_since_contact - daysAgo)
+      if (effectiveDays > c.cadence_days) overdue++
+      else if (effectiveDays > c.cadence_days - 3) dueSoon++
+    }
+    return Math.max(0, Math.min(100, 100 - overdue * 12 - dueSoon * 5))
+  })
+}
+
+// Kept for opp score history (no equivalent historical data available for opps)
 function deterministicHistory(current: number, periods: number, seed: number): number[] {
   const start = Math.max(5, current - 35)
   return Array.from({ length: periods }, (_, i) => {
@@ -104,12 +131,13 @@ function deriveNetAnalytics(contacts: Contact[]): NetAnalytics {
   const categories = NET_CAT_ORDER.filter(k => catMap[k] > 0)
     .map(k => ({ label: k, count: catMap[k], color: NET_CAT_COLORS[k], pct: total ? Math.round((catMap[k] / total) * 100) : 0 }))
 
-  const scoreHistory6 = deterministicHistory(orbitScore, 6, total + 7)
+  const scoreHistory6 = buildRealScoreHistory(contacts, 6)
   const growthHistory6 = buildGrowthHistory(contacts, 6)
   const activityHistory4 = buildActivityHistory(contacts, 5)
 
   return {
     orbitScore, totalConnections: total, activeConnections: active,
+    overdueCount: overdue, dueSoonCount: dueSoon,
     needsAttention: overdue + dueSoon, dormant, newThisMonth, categories,
     scoreHistory6, growthHistory6, activityHistory4,
     scoreChange: orbitScore - scoreHistory6[scoreHistory6.length - 2],
@@ -204,59 +232,94 @@ function deriveOppAnalytics(opps: Opportunity[], contacts: Contact[]): OppAnalyt
   }
 }
 
-// ── Chart primitives ──────────────────────────────────────────────────────────
+// ── Network health arc ────────────────────────────────────────────────────────
+// Segmented 3/4 arc: green = good, orange = due soon, red = overdue.
+// Shows real network composition, not synthetic history.
 
-function LineChart({ data, width, height, color, gradId }: {
-  data: number[]; width: number; height: number; color: string; gradId: string
+function NetworkHealthArc({ score, total, good, dueSoon, overdue, size }: {
+  score: number; total: number; good: number; dueSoon: number; overdue: number; size: number
 }) {
-  if (data.length < 2 || width <= 0) return null
-  const max = Math.max(...data, 1), min = Math.min(...data, 0)
-  const range = max - min || 1
-  const pad = 6
-  const pts = data.map((v, i) => ({
-    x: pad + (i / (data.length - 1)) * (width - pad * 2),
-    y: pad + (1 - (v - min) / range) * (height - pad * 2),
-  }))
-  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
-  const area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${height} L${pts[0].x.toFixed(1)},${height} Z`
-  const last = pts[pts.length - 1]
-  return (
-    <Svg width={width} height={height}>
-      <Defs>
-        <SvgGrad id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={color} stopOpacity="0.22" />
-          <Stop offset="100%" stopColor={color} stopOpacity="0" />
-        </SvgGrad>
-      </Defs>
-      <Path d={area} fill={`url(#${gradId})`} />
-      <Path d={line} stroke={color} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <Circle cx={last.x} cy={last.y} r={4.5} fill={color} />
-    </Svg>
-  )
-}
+  const [prog, setProg] = useState(0)
+  const c = useColors()
 
-function DonutChart({ cats, size }: { cats: { color: string; count: number }[]; size: number }) {
-  const total = cats.reduce((s, c) => s + c.count, 0) || 1
+  useEffect(() => {
+    setProg(0)
+    const start = Date.now()
+    const id = setInterval(() => {
+      const p = Math.min(1, (Date.now() - start) / 950)
+      setProg(1 - Math.pow(1 - p, 3))
+      if (p >= 1) clearInterval(id)
+    }, 16)
+    return () => clearInterval(id)
+  }, [score, total])
+
   const cx = size / 2, cy = size / 2
-  const R = size * 0.42, r = size * 0.27
-  let a = -Math.PI / 2
-  const slices = cats.map(cat => {
-    const sweep = (cat.count / total) * Math.PI * 2
-    const e = a + sweep
-    const x1 = cx + R * Math.cos(a), y1 = cy + R * Math.sin(a)
-    const x2 = cx + R * Math.cos(e), y2 = cy + R * Math.sin(e)
-    const ix1 = cx + r * Math.cos(e), iy1 = cy + r * Math.sin(e)
-    const ix2 = cx + r * Math.cos(a), iy2 = cy + r * Math.sin(a)
-    const lg = sweep > Math.PI ? 1 : 0
-    const d = `M${x1.toFixed(1)},${y1.toFixed(1)} A${R},${R} 0 ${lg},1 ${x2.toFixed(1)},${y2.toFixed(1)} L${ix1.toFixed(1)},${iy1.toFixed(1)} A${r},${r} 0 ${lg},0 ${ix2.toFixed(1)},${iy2.toFixed(1)} Z`
-    const out = { d, color: cat.color }
-    a = e
-    return out
-  })
+  const R = size * 0.37
+  const sw = 13 // stroke width
+  const T = Math.max(total, 1)
+  const svgH = Math.round(cy + R * 0.78) // crop bottom gap
+
+  // Arc from 135° clockwise 270° to 45° (horseshoe, open at bottom)
+  function seg(f1: number, f2: number): string {
+    if (f2 <= f1 + 0.002) return ''
+    const a1 = ((135 + f1 * 270) * Math.PI) / 180
+    const a2 = ((135 + f2 * 270) * Math.PI) / 180
+    const x1 = cx + R * Math.cos(a1), y1 = cy + R * Math.sin(a1)
+    const x2 = cx + R * Math.cos(a2), y2 = cy + R * Math.sin(a2)
+    const lg = (f2 - f1) * 270 > 180 ? 1 : 0
+    return `M${x1.toFixed(1)},${y1.toFixed(1)} A${R},${R} 0 ${lg},1 ${x2.toFixed(1)},${y2.toFixed(1)}`
+  }
+
+  const gf = (good / T) * prog
+  const df = (dueSoon / T) * prog
+  const of_ = (overdue / T) * prog
+  const g1 = gf, d0 = gf, d1 = gf + df, o0 = gf + df, o1 = gf + df + of_
+
+  const scoreColor = score >= 70 ? c.success : score >= 50 ? c.warning : c.overdue
+  const scoreLabel = score >= 90 ? 'Excellent' : score >= 70 ? 'Great' : score >= 50 ? 'Fair' : 'Needs Work'
+
   return (
-    <Svg width={size} height={size}>
-      {slices.map((s, i) => <Path key={i} d={s.d} fill={s.color} />)}
-    </Svg>
+    <View style={{ alignItems: 'center', marginBottom: 4 }}>
+      <View style={{ width: size, height: svgH }}>
+        <Svg width={size} height={svgH}>
+          {/* Background track */}
+          <Path d={seg(0, 1)} stroke={c.border} strokeWidth={sw} fill="none" strokeLinecap="round" />
+          {/* Good – green */}
+          {g1 > 0.002 && <Path d={seg(0, g1)} stroke={c.success} strokeWidth={sw} fill="none" strokeLinecap="round" />}
+          {/* Due soon – orange */}
+          {d1 > d0 + 0.002 && <Path d={seg(d0, d1)} stroke={c.warning} strokeWidth={sw} fill="none" strokeLinecap={d0 < 0.002 ? 'round' : 'butt'} />}
+          {/* Overdue – red */}
+          {o1 > o0 + 0.002 && <Path d={seg(o0, o1)} stroke={c.overdue} strokeWidth={sw} fill="none" strokeLinecap={o0 < 0.002 ? 'round' : 'butt'} />}
+        </Svg>
+        {/* Score overlay */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: svgH, alignItems: 'center', justifyContent: 'center', paddingBottom: 16 }}>
+          <Text style={{ fontFamily: FontFamily.display, fontSize: 50, color: c.primary, lineHeight: 54 }}>{score}</Text>
+          <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: scoreColor, fontWeight: '600', marginTop: 2 }}>{scoreLabel}</Text>
+        </View>
+      </View>
+      {/* Legend */}
+      <View style={{ flexDirection: 'row', gap: 14, marginTop: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.success }} />
+          <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary }}>{good} on track</Text>
+        </View>
+        {dueSoon > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.warning }} />
+            <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary }}>{dueSoon} due soon</Text>
+          </View>
+        )}
+        {overdue > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.overdue }} />
+            <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary }}>{overdue} overdue</Text>
+          </View>
+        )}
+        {total === 0 && (
+          <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary }}>Add contacts to see your health</Text>
+        )}
+      </View>
+    </View>
   )
 }
 
@@ -271,12 +334,32 @@ function SectionCard({ children, style }: { children: React.ReactNode; style?: a
   )
 }
 
-function CardTitle({ title, right }: { title: string; right?: React.ReactNode }) {
+function CardTitle({ title, right, info }: { title: string; right?: React.ReactNode; info?: string }) {
+  const [infoOpen, setInfoOpen] = useState(false)
   const c = useColors()
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-      <Text style={{ fontFamily: FontFamily.sans, fontSize: 15, fontWeight: '600', color: c.primary }}>{title}</Text>
-      {right}
+    <View style={{ marginBottom: 14 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ fontFamily: FontFamily.sans, fontSize: 15, fontWeight: '600', color: c.primary }}>{title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {right}
+          {info !== undefined && (
+            <TouchableOpacity
+              onPress={() => setInfoOpen(v => !v)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.7}
+              style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: c.tertiary, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: FontFamily.sans, fontSize: 10, color: c.tertiary }}>?</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+      {info && infoOpen && (
+        <View style={{ marginTop: 8, backgroundColor: c.elevated, borderRadius: Radius.md, borderWidth: 1, borderColor: c.border, paddingHorizontal: 12, paddingVertical: 8 }}>
+          <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary, lineHeight: 17 }}>{info}</Text>
+        </View>
+      )}
     </View>
   )
 }
@@ -340,22 +423,26 @@ function PeriodPicker({ value, onChange }: { value: Period; onChange: (p: Period
 
 function NetOverviewTab({ a, chartW }: { a: NetAnalytics; chartW: number }) {
   const c = useColors()
-  const scoreColor = a.orbitScore >= 80 ? c.success : a.orbitScore >= 60 ? c.warning : c.overdue
-  const scoreLabel = a.orbitScore >= 90 ? 'Excellent' : a.orbitScore >= 75 ? 'Great' : a.orbitScore >= 60 ? 'Good' : 'Needs Work'
   const pct = (v: number) => a.totalConnections > 0 ? `${Math.round((v / a.totalConnections) * 100)}% of network` : '—'
 
   return (
     <>
       <SectionCard>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <Text style={{ fontFamily: FontFamily.sans, fontSize: 15, fontWeight: '600', color: c.primary }}>Relationship Strength</Text>
-          <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: scoreColor, fontWeight: '600' }}>{scoreLabel}</Text>
-        </View>
-        <Text style={{ fontFamily: FontFamily.display, fontSize: 52, color: c.gold, lineHeight: 56 }}>{a.orbitScore}</Text>
-        <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: a.scoreChange >= 0 ? c.success : c.overdue, marginBottom: 12 }}>
-          {a.scoreChange >= 0 ? '+' : ''}{a.scoreChange} this month
+        <CardTitle
+          title="Relationship Strength"
+          info="Your network health score (0–100). Overdue contacts cost 12 pts, due-soon contacts cost 5 pts. Stay on your cadence to keep it climbing."
+        />
+        <NetworkHealthArc
+          score={a.orbitScore}
+          total={a.totalConnections}
+          good={a.activeConnections}
+          dueSoon={a.dueSoonCount}
+          overdue={a.overdueCount}
+          size={chartW}
+        />
+        <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: a.newThisMonth > 0 ? c.success : c.tertiary, marginTop: 8 }}>
+          {a.newThisMonth > 0 ? `+${a.newThisMonth} new contact${a.newThisMonth === 1 ? '' : 's'} this month` : 'No new contacts this month'}
         </Text>
-        <LineChart data={a.scoreHistory6} width={chartW} height={90} color={c.gold} gradId="scoreGrad" />
       </SectionCard>
 
       <Text style={{ fontFamily: FontFamily.sans, fontSize: 15, fontWeight: '600', color: c.primary, marginBottom: 12 }}>At a Glance</Text>
@@ -369,7 +456,7 @@ function NetOverviewTab({ a, chartW }: { a: NetAnalytics; chartW: number }) {
       </View>
 
       <SectionCard>
-        <CardTitle title="Top Categories" />
+        <CardTitle title="Top Categories" info="How your contacts break down by relationship type. A diverse mix of mentors, recruiters, and peers opens more doors." />
         {a.categories.length === 0 ? (
           <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.tertiary, textAlign: 'center', paddingVertical: 16 }}>
             Add contacts with relationship types to see categories
@@ -422,12 +509,16 @@ function NetActivityTab({ a, chartW }: { a: NetAnalytics; chartW: number }) {
       </SectionCard>
 
       <SectionCard>
-        <CardTitle title="Activity Over Time" right={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: c.elevated, borderRadius: 20 }}>
-            <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary }}>Interactions</Text>
-            <Ionicons name="chevron-down" size={12} color={c.secondary} />
-          </View>
-        } />
+        <CardTitle
+          title="Activity Over Time"
+          info="Contacts you reached out to each week. Steady upward bars mean you're consistently nurturing your network."
+          right={
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: c.elevated, borderRadius: 20 }}>
+              <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary }}>Interactions</Text>
+              <Ionicons name="chevron-down" size={12} color={c.secondary} />
+            </View>
+          }
+        />
         <LineChart data={a.activityHistory4} width={chartW} height={100} color={c.gold} gradId="actGrad" />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
           {['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4', 'Wk 5'].slice(0, a.activityHistory4.length).map(l => (
@@ -437,7 +528,7 @@ function NetActivityTab({ a, chartW }: { a: NetAnalytics; chartW: number }) {
       </SectionCard>
 
       <SectionCard>
-        <CardTitle title="Activity Breakdown" />
+        <CardTitle title="Activity Breakdown" info="Estimated split of how you've been communicating. Varied interaction types — calls, messages, in-person — build stronger relationships." />
         {breakdown.map((b, i) => (
           <View key={b.label} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: i < breakdown.length - 1 ? 1 : 0, borderBottomColor: c.border }}>
             <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: b.color + '18', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
@@ -463,7 +554,7 @@ function NetGrowthTab({ a, chartW }: { a: NetAnalytics; chartW: number }) {
   return (
     <>
       <SectionCard>
-        <CardTitle title="Network Growth" right={<PeriodPicker value={period} onChange={setPeriod} />} />
+        <CardTitle title="Network Growth" right={<PeriodPicker value={period} onChange={setPeriod} />} info="Cumulative size of your network month by month. Each step up represents new contacts added to your orbit." />
         <Text style={{ fontFamily: FontFamily.display, fontSize: 52, color: c.gold, lineHeight: 56 }}>{a.totalConnections}</Text>
         <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginBottom: 2 }}>Total Connections</Text>
         <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: a.growthChange >= 0 ? c.success : c.overdue, marginBottom: 12 }}>
@@ -493,7 +584,7 @@ function NetGrowthTab({ a, chartW }: { a: NetAnalytics; chartW: number }) {
       </SectionCard>
 
       <SectionCard>
-        <CardTitle title="Network Health Score History" right={<PeriodPicker value={period} onChange={setPeriod} />} />
+        <CardTitle title="Health Score History" right={<PeriodPicker value={period} onChange={setPeriod} />} info="How your network health score has trended over 6 months. Focus on the direction — occasional dips are normal." />
         <Text style={{ fontFamily: FontFamily.display, fontSize: 52, color: c.gold, lineHeight: 56 }}>{a.orbitScore}</Text>
         <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginBottom: 12 }}>Current Score</Text>
         <LineChart data={a.scoreHistory6} width={chartW} height={110} color={c.gold} gradId="healthGrad" />
@@ -518,10 +609,10 @@ function OppOverviewTab({ a, chartW }: { a: OppAnalytics; chartW: number }) {
     <>
       {/* Score card */}
       <SectionCard>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <Text style={{ fontFamily: FontFamily.sans, fontSize: 15, fontWeight: '600', color: c.primary }}>Opportunity Score</Text>
-          <Ionicons name="information-circle-outline" size={15} color={c.tertiary} />
-        </View>
+        <CardTitle
+          title="Opportunity Score"
+          info="Your pipeline health (0–100). Overdue opps lose 20 pts each, missed opps lose 15 pts, upcoming deadlines lose 5 pts. Complete opps to grow it."
+        />
         <Text style={{ fontFamily: FontFamily.display, fontSize: 52, color: c.primary, lineHeight: 56 }}>{a.score}</Text>
         <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: scoreColor, fontWeight: '600', marginBottom: 2 }}>{scoreLabel}</Text>
         <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: a.scoreChange >= 0 ? c.success : c.overdue, marginBottom: 12 }}>
@@ -547,7 +638,7 @@ function OppOverviewTab({ a, chartW }: { a: OppAnalytics; chartW: number }) {
 
       {/* Category donut */}
       <SectionCard>
-        <CardTitle title="By Category" />
+        <CardTitle title="By Category" info="How your opportunities break down by type. A healthy pipeline spans multiple categories to spread your risk." />
         {a.categories.length === 0 ? (
           <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.tertiary, textAlign: 'center', paddingVertical: 16 }}>
             Add opportunities with categories to see breakdown
@@ -625,12 +716,16 @@ function OppActivityTab({ a, chartW }: { a: OppAnalytics; chartW: number }) {
 
       {/* Activity Over Time */}
       <SectionCard>
-        <CardTitle title="Activity Over Time" right={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: c.elevated, borderRadius: 20 }}>
-            <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary }}>Applications</Text>
-            <Ionicons name="chevron-down" size={12} color={c.secondary} />
-          </View>
-        } />
+        <CardTitle
+          title="Activity Over Time"
+          info="New opportunities added each week. Consistent activity means you're always building your pipeline and staying ahead."
+          right={
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: c.elevated, borderRadius: 20 }}>
+              <Text style={{ fontFamily: FontFamily.sans, fontSize: 12, color: c.secondary }}>Applications</Text>
+              <Ionicons name="chevron-down" size={12} color={c.secondary} />
+            </View>
+          }
+        />
         <LineChart data={a.activityHistory} width={chartW} height={100} color={OPP_COLOR} gradId="oppActGrad" />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
           {['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4', 'Wk 5'].slice(0, a.activityHistory.length).map(l => (
@@ -663,7 +758,7 @@ function OppGrowthTab({ a, chartW }: { a: OppAnalytics; chartW: number }) {
     <>
       {/* Growth card */}
       <SectionCard>
-        <CardTitle title="Opportunity Growth" right={<PeriodPicker value={period} onChange={setPeriod} />} />
+        <CardTitle title="Opportunity Growth" right={<PeriodPicker value={period} onChange={setPeriod} />} info="Total opportunities created over 6 months. An upward trend means you're consistently identifying new paths forward." />
         <Text style={{ fontFamily: FontFamily.display, fontSize: 52, color: c.primary, lineHeight: 56 }}>{a.total}</Text>
         <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginBottom: 2 }}>Total Opportunities Created</Text>
         <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: growth >= 0 ? c.success : c.overdue, marginBottom: 12 }}>
@@ -679,7 +774,7 @@ function OppGrowthTab({ a, chartW }: { a: OppAnalytics; chartW: number }) {
 
       {/* Funnel Conversion */}
       <SectionCard>
-        <CardTitle title="Funnel Conversion" right={<Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: OPP_COLOR }}>View all</Text>} />
+        <CardTitle title="Funnel Conversion" info="How your connections convert through the pipeline. Each step shows the % that make it to the next stage — a narrowing funnel is normal." />
         {funnelSteps.map((step, i) => (
           <View key={step.label} style={{ marginBottom: i < funnelSteps.length - 1 ? 14 : 0 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -728,6 +823,8 @@ export default function TrackerScreen() {
   const { width: screenW } = useWindowDimensions()
   const chartW = screenW - 64
   const tabBarPadding = useTabBarPadding()
+  const { isPro, openUpgrade } = usePro()
+  const router = useRouter()
 
   const [contacts, setContacts] = useState<Contact[]>([])
   const [opps, setOpps]         = useState<Opportunity[]>([])
@@ -764,12 +861,54 @@ export default function TrackerScreen() {
     )
   }
 
+  if (!isPro) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Analytics</Text>
+          <Ionicons name="bar-chart-outline" size={22} color={c.secondary} />
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
+          <View style={{
+            width: 56, height: 56, borderRadius: 28,
+            backgroundColor: c.gold + '18', borderWidth: 1, borderColor: c.gold + '40',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Ionicons name="bar-chart-outline" size={26} color={c.gold} />
+          </View>
+          <Text style={{ fontFamily: FontFamily.display, fontSize: 22, color: c.primary, textAlign: 'center' }}>
+            Full Analytics
+          </Text>
+          <Text style={{ fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary, textAlign: 'center', lineHeight: 20 }}>
+            Network health scores, opportunity trends, growth charts, and activity breakdowns — all unlocked with Pro.
+          </Text>
+          <TouchableOpacity
+            onPress={openUpgrade}
+            activeOpacity={0.85}
+            style={{
+              marginTop: 8, backgroundColor: c.gold, borderRadius: Radius.card,
+              paddingVertical: 14, paddingHorizontal: 32,
+            }}
+          >
+            <Text style={{ fontFamily: FontFamily.display, fontSize: 16, color: '#fff' }}>Upgrade to Pro</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={openUpgrade} activeOpacity={0.7}>
+            <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.tertiary }}>Start 7-day free trial</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Analytics</Text>
-        <Ionicons name="calendar-outline" size={22} color={c.secondary} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <HeaderBell />
+          <Ionicons name="bar-chart-outline" size={22} color={c.secondary} />
+        </View>
       </View>
 
       {/* Network | Opportunities toggle */}

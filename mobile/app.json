@@ -9,9 +9,11 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#141318",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.dialed.app"
     },
     "android": {
+      "package": "com.dialed.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -37,6 +39,18 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Dialed uses your contacts to help you quickly add the people who matter to your network."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Dialed uses your photo library to add faces to contacts and power AI outfit-check."
+        }
+      ],
       [
         "expo-notifications",
         {

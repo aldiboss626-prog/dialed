@@ -9,3 +9,7 @@ client/.env
 .DS_Store
 *.log
 *.tsbuildinfo
+
+# Local utility scripts that contain the Supabase service-role key — never commit
+seed-demo.js
+setup-supabase.js
