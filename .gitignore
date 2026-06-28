@@ -11,6 +11,9 @@ node_modules/
 client/dist/
 dist/
 
+# server SQLite runtime data (regenerated + seeded on startup)
+server/data/
+
 # secret-bearing demo seeder (contains the Supabase SERVICE-ROLE key) — hand-carry, do not push
 lose stuff/
 
