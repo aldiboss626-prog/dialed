@@ -1,14 +1,19 @@
-import { useState, useRef, useEffect } from 'react'
+import { useRef, useState } from 'react'
 import {
   Modal, View, Text, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, PanResponder,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Linking,
 } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { contactsDb } from '@/lib/db'
+import { loadPhoneContacts } from '@/lib/api'
+import { ImportSelectionModal } from '@/components/ImportSelectionModal'
+import { FloatingNav } from '@/components/FloatingNav'
 import { FontFamily } from '@/constants/theme'
 import { useColors } from '@/hooks/use-theme'
-import type { Contact } from '@/types'
+import type { ColorPalette } from '@/hooks/use-theme'
+import type { Contact, ImportCandidate } from '@/types'
 
 // ── Tag colours ───────────────────────────────────────────────────────────────
 
@@ -28,164 +33,23 @@ function tagColor(tag?: string | null): string {
 
 const STAR_CADENCE: Record<number, number> = { 5: 5, 4: 10, 3: 14, 2: 21, 1: 30 }
 
-// ── DaySlider ─────────────────────────────────────────────────────────────────
-
-function DaySlider({ value, onChange, min = 1, max = 90 }: {
-  value: number; onChange: (v: number) => void; min?: number; max?: number
-}) {
-  const c = useColors()
-  const [trackW, setTrackW] = useState(0)
-  const [editing, setEditing] = useState(false)
-  const [inputVal, setInputVal] = useState(String(value))
-
-  const layoutRef = useRef({ pageX: 0, width: 1 })
-  const onChangeRef = useRef(onChange)
-  onChangeRef.current = onChange
-  const minRef = useRef(min); minRef.current = min
-  const maxRef = useRef(max); maxRef.current = max
-  const trackRef = useRef<View>(null)
-
-  // Keep inputVal in sync when slider moves (but not while the user is typing)
-  useEffect(() => {
-    if (!editing) setInputVal(String(value))
-  }, [value, editing])
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        trackRef.current?.measure((_fx, _fy, w, _h, pageX) => {
-          layoutRef.current = { pageX, width: w }
-        })
-      },
-      onPanResponderMove: (_, gs) => {
-        const { pageX, width } = layoutRef.current
-        const ratio = Math.max(0, Math.min(1, (gs.moveX - pageX) / width))
-        onChangeRef.current(Math.round(minRef.current + ratio * (maxRef.current - minRef.current)))
-      },
-    })
-  ).current
-
-  function commitEdit() {
-    const parsed = parseInt(inputVal, 10)
-    if (!isNaN(parsed)) onChange(Math.max(min, Math.min(max, parsed)))
-    else setInputVal(String(value))
-    setEditing(false)
-  }
-
-  const pct = Math.max(0, Math.min(1, (value - min) / (max - min)))
-  const thumbLeft = trackW > 0 ? pct * trackW - 11 : 0
-
-  return (
-    <View style={{ gap: 8 }}>
-      {/* − track + */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-        <TouchableOpacity
-          onPress={() => onChange(Math.max(min, value - 1))}
-          activeOpacity={0.7}
-          style={{
-            width: 40, height: 40, borderRadius: 20,
-            borderWidth: 1.5, borderColor: c.border,
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Ionicons name="remove" size={20} color={c.primary} />
-        </TouchableOpacity>
-
-        <View
-          ref={trackRef}
-          style={{ flex: 1, height: 44, justifyContent: 'center' }}
-          onLayout={e => {
-            const w = e.nativeEvent.layout.width
-            setTrackW(w)
-            setTimeout(() => {
-              trackRef.current?.measure((_fx, _fy, mw, _h, pageX) => {
-                layoutRef.current = { pageX, width: mw }
-              })
-            }, 50)
-          }}
-          {...panResponder.panHandlers}
-        >
-          <View style={{ height: 3, borderRadius: 2, backgroundColor: c.border, overflow: 'hidden' }}>
-            <View style={{
-              position: 'absolute', left: 0, top: 0, bottom: 0,
-              width: pct * (trackW || 1), backgroundColor: c.gold,
-            }} />
-          </View>
-          {trackW > 0 && (
-            <View style={{
-              position: 'absolute', left: thumbLeft, top: (44 - 22) / 2,
-              width: 22, height: 22, borderRadius: 11,
-              backgroundColor: '#fff', borderWidth: 2.5, borderColor: c.gold,
-              shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.15, shadowRadius: 4, elevation: 3,
-            }} />
-          )}
-        </View>
-
-        <TouchableOpacity
-          onPress={() => onChange(Math.min(max, value + 1))}
-          activeOpacity={0.7}
-          style={{
-            width: 40, height: 40, borderRadius: 20,
-            borderWidth: 1.5, borderColor: c.border,
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Ionicons name="add" size={20} color={c.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Tappable day count — switches to TextInput on tap */}
-      <TouchableOpacity
-        onPress={() => { setInputVal(String(value)); setEditing(true) }}
-        activeOpacity={0.7}
-        style={{ alignItems: 'center' }}
-        disabled={editing}
-      >
-        {editing ? (
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-            <TextInput
-              value={inputVal}
-              onChangeText={t => setInputVal(t.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-              autoFocus
-              selectTextOnFocus
-              onBlur={commitEdit}
-              onSubmitEditing={commitEdit}
-              style={{
-                fontFamily: FontFamily.display, fontSize: 32, color: c.primary,
-                minWidth: 60, textAlign: 'center',
-                borderBottomWidth: 2, borderBottomColor: c.gold,
-                paddingVertical: 0,
-              }}
-            />
-            <Text style={{ fontFamily: FontFamily.sans, fontSize: 16, color: c.secondary }}>days</Text>
-          </View>
-        ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-            <Text style={{ fontFamily: FontFamily.display, fontSize: 32, color: c.primary }}>
-              {value}
-            </Text>
-            <Text style={{ fontFamily: FontFamily.sans, fontSize: 16, color: c.secondary }}>days</Text>
-            <Ionicons name="pencil-outline" size={13} color={c.tertiary} style={{ marginBottom: 2 }} />
-          </View>
-        )}
-      </TouchableOpacity>
-    </View>
-  )
-}
+type Source = 'manual' | 'phone' | 'email' | 'scan'
+const SOURCES: { id: Source; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { id: 'manual', label: 'Manual Entry',       icon: 'person-outline' },
+  { id: 'phone',  label: 'Phone Contacts',     icon: 'call-outline' },
+  { id: 'email',  label: 'Email Contacts',     icon: 'mail-outline' },
+  { id: 'scan',   label: 'Scan Business Card', icon: 'scan-outline' },
+]
 
 // ── StarRow ───────────────────────────────────────────────────────────────────
 
 function StarRow({ stars, onStars }: { stars: number; onStars: (n: number) => void }) {
   const c = useColors()
   return (
-    <View style={{ flexDirection: 'row', gap: 6 }}>
+    <View style={{ flexDirection: 'row', gap: 4 }}>
       {[1, 2, 3, 4, 5].map(n => (
-        <TouchableOpacity key={n} onPress={() => onStars(n)} activeOpacity={0.7}>
-          <Ionicons name={n <= stars ? 'star' : 'star-outline'} size={26} color={n <= stars ? c.gold : c.border} />
+        <TouchableOpacity key={n} onPress={() => onStars(n)} activeOpacity={0.7} hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}>
+          <Ionicons name={n <= stars ? 'star' : 'star-outline'} size={22} color={n <= stars ? c.gold : c.border} />
         </TouchableOpacity>
       ))}
     </View>
@@ -203,8 +67,10 @@ interface Props {
 
 export function AddContactModal({ visible, onClose, onAdd, onAdded }: Props) {
   const c = useColors()
-  const insets = useSafeAreaInsets()
+  const s = makeStyles(c)
+  const router = useRouter()
 
+  const [source, setSource] = useState<Source>('manual')
   const [name, setName] = useState('')
   const [title, setTitle] = useState('')
   const [company, setCompany] = useState('')
@@ -219,12 +85,65 @@ export function AddContactModal({ visible, onClose, onAdd, onAdded }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Phone-contacts import
+  const [importOpen, setImportOpen] = useState(false)
+  const [importCandidates, setImportCandidates] = useState<ImportCandidate[]>([])
+  const [importLoading, setImportLoading] = useState(false)
+  const didImport = useRef(false)
+
+  async function getExistingEmails(): Promise<string[]> {
+    try {
+      const contacts = await contactsDb.list()
+      return contacts.map(x => x.email).filter((e): e is string => !!e)
+    } catch { return [] }
+  }
+
+  async function handleImportPhone() {
+    setImportLoading(true)
+    setImportCandidates([])
+    setImportOpen(true)
+    try {
+      const existing = await getExistingEmails()
+      setImportCandidates(await loadPhoneContacts(existing))
+    } catch (err: any) {
+      setImportOpen(false)
+      if (err?.message === 'LIMITED_ACCESS') {
+        Alert.alert(
+          'Limited Contacts Access',
+          'You only granted access to some contacts. To import your full network, go to iPhone Settings → Privacy & Security → Contacts → Dialed, then choose "Allow Access to All Contacts".',
+          [{ text: 'Open Settings', onPress: () => Linking.openSettings() }, { text: 'OK', style: 'cancel' }],
+        )
+      } else {
+        Alert.alert('Could not load contacts', err?.message ?? 'Allow contacts access in Settings.')
+      }
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  async function handleConfirmImport(selected: ImportCandidate[]) {
+    const created = await contactsDb.bulkCreate(selected.map(x => ({ name: x.name, email: x.email, phone: x.phone, role: x.role })))
+    const cb = onAdd ?? onAdded
+    created.forEach(ct => cb?.(ct))
+    didImport.current = true
+  }
+
+  function handleImportClose() {
+    setImportOpen(false)
+    if (didImport.current) { didImport.current = false; handleClose() }
+  }
+
   function handleStars(n: number) {
     setStars(n)
     if (!customCadence) setCadence(STAR_CADENCE[n])
   }
+  function setCad(v: number) {
+    setCadence(Math.max(1, Math.min(90, v)))
+    setCustomCadence(true)
+  }
 
   function reset() {
+    setSource('manual')
     setName(''); setTitle(''); setCompany(''); setEmail(''); setPhone('')
     setRelType('Mentor'); setCustomTagDraft(''); setCustomTagOpen(false)
     setStars(3); setCadence(STAR_CADENCE[3])
@@ -266,266 +185,281 @@ export function AddContactModal({ visible, onClose, onAdd, onAdded }: Props) {
 
   const isDefault = cadence === STAR_CADENCE[stars] && !customCadence
 
+  const FIELDS = [
+    { label: 'Full name *',      value: name,    set: setName,    placeholder: 'Maya Patel',        kb: 'default' as const },
+    { label: 'Title',            value: title,   set: setTitle,   placeholder: 'Product Designer',  kb: 'default' as const },
+    { label: 'Company',          value: company, set: setCompany, placeholder: 'Linear',            kb: 'default' as const },
+    { label: 'Email',            value: email,   set: setEmail,   placeholder: 'maya@linear.app',   kb: 'email-address' as const },
+    { label: 'Phone (optional)', value: phone,   set: setPhone,   placeholder: '+1 (415) 123-4567', kb: 'phone-pad' as const },
+  ]
+
+  const activeSource = SOURCES.find(x => x.id === source)!
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={handleClose}
-    >
-      <View style={{ flex: 1, backgroundColor: c.background }}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: c.background }} edges={['top']}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-          {/* Drag handle */}
-          <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 4 }}>
-            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: c.border }} />
-          </View>
-
-          {/* Header — X on left, title centered, no Skip */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16,
-          }}>
-            <TouchableOpacity
-              onPress={handleClose}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={{
-                width: 32, height: 32, borderRadius: 16,
-                backgroundColor: c.elevated,
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <Ionicons name="close" size={18} color={c.secondary} />
+          {/* Back */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 6 }}>
+            <TouchableOpacity onPress={handleClose} activeOpacity={0.6} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ width: 36, height: 36, justifyContent: 'center' }}>
+              <Ionicons name="chevron-back" size={26} color={c.primary} />
             </TouchableOpacity>
-            <Text style={{
-              flex: 1, textAlign: 'center',
-              fontFamily: FontFamily.sansMedium, fontSize: 16, color: c.primary,
-            }}>
-              Add Connection
-            </Text>
-            {/* spacer to balance the X */}
-            <View style={{ width: 32 }} />
           </View>
 
           <ScrollView
+            style={{ flex: 1 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+            contentContainerStyle={{ paddingBottom: 120 }}
           >
-            {/* Hero */}
-            <View style={{ alignItems: 'center', paddingTop: 4, paddingBottom: 22, paddingHorizontal: 32 }}>
-              <View style={{
-                width: 60, height: 60, borderRadius: 30,
-                backgroundColor: c.gold + '18',
-                alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-              }}>
-                <Ionicons name="person-outline" size={26} color={c.gold} />
+            {/* Title block */}
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, paddingTop: 4 }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={s.title}>Add Connection</Text>
+                <Text style={s.subtitle}>Add someone to your network and build stronger relationships.</Text>
               </View>
-              <Text style={{ fontFamily: FontFamily.display, fontSize: 24, color: c.primary, textAlign: 'center', marginBottom: 7 }}>
-                Add someone to your network
-              </Text>
-              <Text style={{ fontFamily: FontFamily.sans, fontSize: 13.5, color: c.secondary, textAlign: 'center', lineHeight: 19 }}>
-                Build stronger relationships and unlock new opportunities.
-              </Text>
+              <View style={s.heroBadge}>
+                <Ionicons name="person-add-outline" size={22} color={c.gold} />
+              </View>
             </View>
 
-            {/* Form card */}
-            <View style={{
-              marginHorizontal: 18, backgroundColor: c.surface, borderRadius: 18,
-              borderWidth: 1, borderColor: c.subtleBorder, overflow: 'hidden', marginBottom: 22,
-            }}>
-              {([
-                { label: 'Full name',       value: name,    set: setName,    placeholder: 'Maya Patel',        kb: 'default' as const },
-                { label: 'Title',           value: title,   set: setTitle,   placeholder: 'Product Designer',  kb: 'default' as const },
-                { label: 'Company',         value: company, set: setCompany, placeholder: 'Linear',            kb: 'default' as const },
-                { label: 'Email',           value: email,   set: setEmail,   placeholder: 'maya@linear.app',   kb: 'email-address' as const },
-                { label: 'Phone (optional)',value: phone,   set: setPhone,   placeholder: '+1 (415) 123-4567', kb: 'phone-pad' as const },
-              ] as const).map((f, i, arr) => (
-                <View key={f.label} style={{
-                  paddingHorizontal: 16, paddingTop: 11, paddingBottom: 11,
-                  borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: c.border,
-                }}>
-                  <Text style={{ fontFamily: FontFamily.sans, fontSize: 11, color: c.tertiary, marginBottom: 3 }}>
-                    {f.label}
-                  </Text>
-                  <TextInput
-                    value={f.value}
-                    onChangeText={f.set}
-                    placeholder={f.placeholder}
-                    placeholderTextColor={c.tertiary}
-                    keyboardType={f.kb}
-                    autoCapitalize={f.kb === 'email-address' ? 'none' : 'words'}
-                    style={{ fontFamily: FontFamily.sans, fontSize: 15, color: c.primary, paddingVertical: 0, minHeight: 22 }}
-                    returnKeyType={i < arr.length - 1 ? 'next' : 'done'}
-                  />
-                </View>
-              ))}
-            </View>
-
-            {/* Relationship tag */}
-            <Text style={{
-              fontFamily: FontFamily.sansMedium, fontSize: 11, letterSpacing: 0.9,
-              textTransform: 'uppercase', color: c.secondary,
-              marginHorizontal: 18, marginBottom: 12,
-            }}>
-              Tag
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginHorizontal: 18, marginBottom: customTagOpen ? 12 : 22 }}>
-              {/* Preset chips */}
-              {PRESET_TAGS.map(tag => {
-                const active = relType === tag && !customTagOpen
-                const color = tagColor(tag)
+            {/* Source tabs */}
+            <View style={s.tabs}>
+              {SOURCES.map((tab, i) => {
+                const active = source === tab.id
                 return (
                   <TouchableOpacity
-                    key={tag}
-                    onPress={() => { setRelType(tag); setCustomTagOpen(false) }}
-                    activeOpacity={0.75}
-                    style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 7,
-                      paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-                      borderWidth: active ? 1.5 : 1,
-                      borderColor: active ? color : c.border,
-                      backgroundColor: active ? color + '14' : c.surface,
-                    }}
+                    key={tab.id}
+                    onPress={() => { setSource(tab.id); setError('') }}
+                    activeOpacity={0.8}
+                    style={[s.tab, { backgroundColor: active ? c.gold + '14' : c.surface, borderLeftWidth: i > 0 ? 1 : 0, borderLeftColor: c.subtleBorder }]}
                   >
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
-                    <Text style={{
-                      fontFamily: active ? FontFamily.sansMedium : FontFamily.sans,
-                      fontSize: 14, color: active ? color : c.secondary,
-                    }}>
-                      {tag}
+                    <Ionicons name={tab.icon} size={22} color={active ? c.gold : c.primary} />
+                    <Text numberOfLines={2} style={{ fontFamily: active ? FontFamily.sansMedium : FontFamily.sans, fontSize: 11, color: active ? c.gold : c.secondary, textAlign: 'center', lineHeight: 14 }}>
+                      {tab.label}
                     </Text>
                   </TouchableOpacity>
                 )
               })}
+            </View>
 
-              {/* Active custom tag chip (if set and not editing) */}
-              {!PRESET_TAGS.includes(relType) && !customTagOpen && (
-                <TouchableOpacity
-                  onPress={() => { setCustomTagDraft(relType); setCustomTagOpen(true) }}
-                  activeOpacity={0.75}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 7,
-                    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-                    borderWidth: 1.5, borderColor: tagColor(relType),
-                    backgroundColor: tagColor(relType) + '14',
-                  }}
-                >
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tagColor(relType) }} />
-                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: tagColor(relType) }}>
-                    {relType}
-                  </Text>
+            {source === 'phone' ? (
+              /* ── Phone-contacts import ── */
+              <View style={{ alignItems: 'center', paddingHorizontal: 36, paddingTop: 56, gap: 12 }}>
+                <View style={s.heroCircle}>
+                  <Ionicons name="call-outline" size={30} color={c.gold} />
+                </View>
+                <Text style={{ fontFamily: FontFamily.display, fontSize: 21, color: c.primary, textAlign: 'center' }}>Import from your phone</Text>
+                <Text style={{ fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary, textAlign: 'center', lineHeight: 20 }}>
+                  Pick people from your device contacts to add to your network.
+                </Text>
+                <TouchableOpacity onPress={handleImportPhone} activeOpacity={0.85} style={s.primaryPill}>
+                  <Ionicons name="phone-portrait-outline" size={16} color="#fff" />
+                  <Text style={s.primaryPillText}>Choose contacts</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setSource('manual')} activeOpacity={0.8} style={s.ghostBtn}>
+                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: c.gold }}>Add manually instead</Text>
+                </TouchableOpacity>
+              </View>
+            ) : source !== 'manual' ? (
+              /* ── Coming-soon panel (Email / Scan) ── */
+              <View style={{ alignItems: 'center', paddingHorizontal: 36, paddingTop: 56, gap: 12 }}>
+                <View style={s.heroCircle}>
+                  <Ionicons name={activeSource.icon} size={30} color={c.gold} />
+                </View>
+                <Text style={{ fontFamily: FontFamily.display, fontSize: 21, color: c.primary, textAlign: 'center' }}>{activeSource.label}</Text>
+                <Text style={{ fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary, textAlign: 'center', lineHeight: 20 }}>
+                  This import option is coming soon. For now you can add this person by hand.
+                </Text>
+                <TouchableOpacity onPress={() => setSource('manual')} activeOpacity={0.8} style={s.ghostBtn}>
+                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: c.gold }}>Add manually instead</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                {/* CONTACT INFORMATION */}
+                <Text style={s.sectionLabel}>CONTACT INFORMATION</Text>
+                <View style={s.card}>
+                  {FIELDS.map((f, i) => (
+                    <View key={f.label} style={{ paddingHorizontal: 16, paddingTop: 11, paddingBottom: 12, borderBottomWidth: i < FIELDS.length - 1 ? 1 : 0, borderBottomColor: c.border }}>
+                      <Text style={s.fieldLabel}>{f.label}</Text>
+                      <TextInput
+                        value={f.value}
+                        onChangeText={f.set}
+                        placeholder={f.placeholder}
+                        placeholderTextColor={c.tertiary}
+                        keyboardType={f.kb}
+                        autoCapitalize={f.kb === 'email-address' ? 'none' : 'words'}
+                        style={s.fieldInput}
+                        returnKeyType={i < FIELDS.length - 1 ? 'next' : 'done'}
+                      />
+                    </View>
+                  ))}
+                </View>
+
+                {/* TAGS */}
+                <Text style={s.sectionLabel}>TAGS</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginHorizontal: 20 }}>
+                  {PRESET_TAGS.map(tag => {
+                    const active = relType === tag && !customTagOpen
+                    const color = tagColor(tag)
+                    return (
+                      <TouchableOpacity
+                        key={tag}
+                        onPress={() => { setRelType(tag); setCustomTagOpen(false) }}
+                        activeOpacity={0.75}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 7,
+                          paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+                          borderWidth: active ? 1.5 : 1,
+                          borderColor: active ? color : c.border,
+                          backgroundColor: active ? color + '12' : c.surface,
+                        }}
+                      >
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+                        <Text style={{ fontFamily: active ? FontFamily.sansMedium : FontFamily.sans, fontSize: 14, color: active ? color : c.secondary }}>{tag}</Text>
+                      </TouchableOpacity>
+                    )
+                  })}
+
+                  {/* Active custom tag chip */}
+                  {!PRESET_TAGS.includes(relType) && !customTagOpen && (
+                    <TouchableOpacity
+                      onPress={() => { setCustomTagDraft(relType); setCustomTagOpen(true) }}
+                      activeOpacity={0.75}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1.5, borderColor: tagColor(relType), backgroundColor: tagColor(relType) + '12' }}
+                    >
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tagColor(relType) }} />
+                      <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: tagColor(relType) }}>{relType}</Text>
+                      <TouchableOpacity onPress={() => setRelType('Mentor')} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                        <Ionicons name="close" size={14} color={tagColor(relType)} />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* + Custom tag */}
                   <TouchableOpacity
-                    onPress={() => setRelType('Mentor')}
-                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    onPress={() => { setCustomTagDraft(''); setCustomTagOpen(true) }}
+                    activeOpacity={0.75}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface, borderStyle: 'dashed' }}
                   >
-                    <Ionicons name="close" size={14} color={tagColor(relType)} />
+                    <Ionicons name="add" size={16} color={c.tertiary} />
+                    <Text style={{ fontFamily: FontFamily.sans, fontSize: 14, color: c.tertiary }}>Custom tag</Text>
                   </TouchableOpacity>
-                </TouchableOpacity>
-              )}
+                </View>
 
-              {/* + Custom chip */}
-              <TouchableOpacity
-                onPress={() => { setCustomTagDraft(''); setCustomTagOpen(true) }}
-                activeOpacity={0.75}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 5,
-                  paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999,
-                  borderWidth: 1, borderColor: c.border,
-                  backgroundColor: c.surface,
-                  borderStyle: 'dashed',
-                }}
-              >
-                <Ionicons name="add" size={16} color={c.tertiary} />
-                <Text style={{ fontFamily: FontFamily.sans, fontSize: 14, color: c.tertiary }}>
-                  Custom
-                </Text>
-              </TouchableOpacity>
-            </View>
+                {customTagOpen && (
+                  <View style={{ marginHorizontal: 20, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.surface, borderRadius: 14, borderWidth: 1.5, borderColor: c.gold, paddingHorizontal: 14, paddingVertical: 4 }}>
+                    <TextInput
+                      value={customTagDraft}
+                      onChangeText={setCustomTagDraft}
+                      placeholder="e.g. Law Enforcement"
+                      placeholderTextColor={c.tertiary}
+                      autoFocus
+                      autoCapitalize="words"
+                      returnKeyType="done"
+                      onSubmitEditing={commitCustomTag}
+                      style={{ flex: 1, fontFamily: FontFamily.sans, fontSize: 15, color: c.primary, paddingVertical: 10 }}
+                    />
+                    <TouchableOpacity onPress={commitCustomTag} activeOpacity={0.75}>
+                      <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: c.gold }}>Set</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
-            {/* Inline custom tag input */}
-            {customTagOpen && (
-              <View style={{
-                marginHorizontal: 18, marginBottom: 22,
-                flexDirection: 'row', alignItems: 'center', gap: 10,
-                backgroundColor: c.surface, borderRadius: 14,
-                borderWidth: 1.5, borderColor: c.gold,
-                paddingHorizontal: 14, paddingVertical: 4,
-              }}>
-                <TextInput
-                  value={customTagDraft}
-                  onChangeText={setCustomTagDraft}
-                  placeholder="e.g. Law Enforcement"
-                  placeholderTextColor={c.tertiary}
-                  autoFocus
-                  autoCapitalize="words"
-                  returnKeyType="done"
-                  onSubmitEditing={commitCustomTag}
-                  style={{
-                    flex: 1, fontFamily: FontFamily.sans, fontSize: 15,
-                    color: c.primary, paddingVertical: 10,
-                  }}
-                />
-                <TouchableOpacity onPress={commitCustomTag} activeOpacity={0.75}>
-                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: c.gold }}>
-                    Set
+                {/* PRIORITY & CADENCE */}
+                <Text style={s.sectionLabel}>PRIORITY & CADENCE</Text>
+                <View style={s.card}>
+                  {/* Priority */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: c.border }}>
+                    <Text style={s.rowLabel}>Priority</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <StarRow stars={stars} onStars={handleStars} />
+                      <Text style={{ fontFamily: FontFamily.sans, fontSize: 12.5, color: c.tertiary }}>
+                        {isDefault ? `Default · ${stars}★` : 'Custom'}
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Cadence */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 }}>
+                    <Text style={s.rowLabel}>Reach out every</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <TouchableOpacity onPress={() => setCad(cadence - 1)} activeOpacity={0.7} style={s.stepBtn}>
+                        <Ionicons name="remove" size={18} color={c.primary} />
+                      </TouchableOpacity>
+                      <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 15, color: c.primary, minWidth: 64, textAlign: 'center' }}>{cadence} days</Text>
+                      <TouchableOpacity onPress={() => setCad(cadence + 1)} activeOpacity={0.7} style={s.stepBtn}>
+                        <Ionicons name="add" size={18} color={c.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Info banner */}
+                <View style={s.banner}>
+                  <Ionicons name="bulb-outline" size={16} color={c.gold} />
+                  <Text style={{ flex: 1, fontFamily: FontFamily.sans, fontSize: 12.5, color: c.gold, lineHeight: 17 }}>
+                    We'll remind you to stay in touch based on this cadence.
                   </Text>
+                </View>
+
+                {!!error && <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.overdue, marginHorizontal: 20, marginTop: 12, textAlign: 'center' }}>{error}</Text>}
+
+                <TouchableOpacity onPress={handleSave} disabled={loading} activeOpacity={0.85} style={[s.saveBtn, { marginHorizontal: 20, marginTop: 22 }]}>
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.saveText}>Save Connection</Text>}
                 </TouchableOpacity>
-              </View>
+              </>
             )}
-
-            {/* Priority & Cadence */}
-            <View style={{
-              marginHorizontal: 18, backgroundColor: c.surface, borderRadius: 18,
-              borderWidth: 1, borderColor: c.subtleBorder, padding: 18, marginBottom: 22,
-            }}>
-              <Text style={{ fontFamily: FontFamily.display, fontSize: 17, color: c.primary, marginBottom: 18 }}>
-                Priority & cadence
-              </Text>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: c.secondary }}>
-                  Priority
-                </Text>
-                <StarRow stars={stars} onStars={handleStars} />
-              </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: c.secondary }}>
-                  Reach out every
-                </Text>
-                <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.tertiary }}>
-                  {isDefault ? `Default · ${stars}★` : 'Custom'}
-                </Text>
-              </View>
-
-              <DaySlider value={cadence} onChange={v => { setCadence(v); setCustomCadence(true) }} />
-            </View>
-
-            {!!error && (
-              <Text style={{ fontFamily: FontFamily.sans, fontSize: 13, color: c.overdue, marginHorizontal: 18, marginBottom: 12, textAlign: 'center' }}>
-                {error}
-              </Text>
-            )}
-
-            <TouchableOpacity
-              onPress={handleSave}
-              disabled={loading}
-              activeOpacity={0.85}
-              style={{
-                marginHorizontal: 18, backgroundColor: c.gold,
-                borderRadius: 999, paddingVertical: 16, alignItems: 'center',
-              }}
-            >
-              {loading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={{ fontFamily: FontFamily.display, fontSize: 17, color: '#fff' }}>Save Connection</Text>
-              }
-            </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
-      </View>
+
+        <ImportSelectionModal
+          visible={importOpen}
+          candidates={importCandidates}
+          loading={importLoading}
+          onClose={handleImportClose}
+          onImport={handleConfirmImport}
+        />
+
+        <FloatingNav
+          items={[
+            { id: 'network',  label: 'Network',  icon: 'people-outline', onPress: () => { handleClose(); router.navigate({ pathname: '/(tabs)/home', params: { tab: 'network' } } as any) } },
+            { id: 'inbox',    label: 'Inbox',    icon: 'mail-outline',   onPress: () => { handleClose(); router.navigate({ pathname: '/(tabs)/home', params: { tab: 'inbox' } } as any) } },
+            { id: 'contacts', label: 'Contacts', icon: 'search',         onPress: () => { handleClose(); router.navigate('/search' as any) } },
+          ]}
+        />
+      </SafeAreaView>
     </Modal>
   )
+}
+
+function makeStyles(c: ColorPalette) {
+  return {
+    title: { fontFamily: FontFamily.display, fontSize: 30, color: c.primary, lineHeight: 35 } as const,
+    subtitle: { fontFamily: FontFamily.sans, fontSize: 14.5, color: c.secondary, lineHeight: 20, marginTop: 6 } as const,
+    heroBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.gold + '14', alignItems: 'center', justifyContent: 'center' } as const,
+    heroCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: c.gold + '14', alignItems: 'center', justifyContent: 'center' } as const,
+
+    tabs: { marginHorizontal: 20, marginTop: 22, flexDirection: 'row', borderRadius: 14, borderWidth: 1, borderColor: c.subtleBorder, overflow: 'hidden' } as const,
+    tab: { flex: 1, paddingVertical: 14, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', gap: 7, minHeight: 80 } as const,
+
+    sectionLabel: { fontFamily: FontFamily.sansMedium, fontSize: 11, letterSpacing: 0.9, color: c.tertiary, marginHorizontal: 20, marginTop: 24, marginBottom: 10 } as const,
+
+    card: { marginHorizontal: 20, backgroundColor: c.surface, borderRadius: 16, borderWidth: 1, borderColor: c.subtleBorder, overflow: 'hidden' } as const,
+    fieldLabel: { fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary, marginBottom: 3 } as const,
+    fieldInput: { fontFamily: FontFamily.sans, fontSize: 16, color: c.primary, paddingVertical: 0, minHeight: 24 } as const,
+
+    rowLabel: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: c.primary } as const,
+    stepBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' } as const,
+
+    banner: { marginHorizontal: 20, marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: c.gold + '0E', borderRadius: 12, borderWidth: 1, borderColor: c.gold + '22', paddingHorizontal: 13, paddingVertical: 12 } as const,
+
+    primaryPill: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 20, paddingVertical: 13, borderRadius: 999, backgroundColor: c.gold } as const,
+    primaryPillText: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: '#fff' } as const,
+    ghostBtn: { marginTop: 6, paddingHorizontal: 18, paddingVertical: 11, borderRadius: 999, borderWidth: 1.5, borderColor: c.gold + '55' } as const,
+
+    saveBtn: { backgroundColor: c.gold, borderRadius: 16, paddingVertical: 16, alignItems: 'center' } as const,
+    saveText: { fontFamily: FontFamily.display, fontSize: 17, color: '#fff' } as const,
+  }
 }

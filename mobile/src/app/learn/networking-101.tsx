@@ -14,6 +14,7 @@ import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed, getCompletionPercent } from '@/lib/learnProgress'
 import { usePro } from '@/hooks/usePro'
 import { getApiUrl } from '@/lib/api'
+import { contentHeaders } from '@/lib/contentApi'
 
 const TOPIC = 'networking-101'
 const TOTAL_ITEMS = 5
@@ -114,7 +115,7 @@ export default function Networking101Page() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/article`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({ topic: 'networking-101', title: 'conversation starters for networking events' }),
       })
       const data = await res.json()

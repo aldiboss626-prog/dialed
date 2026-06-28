@@ -46,21 +46,34 @@ export const LightColors: ColorPalette = {
   subtleBorder: 'rgba(0,0,0,0.07)',
 }
 
+// Clean white/light palette (reverted from the warm cream). CalColors is the app
+// default; token names are kept identical so every screen's makeStyles(c) keeps working.
 export const CalColors: ColorPalette = {
-  background: '#EEF1FA',
+  background: '#FFFFFF', // white
   surface: '#FFFFFF',
-  border: '#DDE3F0',
-  elevated: '#F4F7FF',
-  primary: '#0D1526',
+  border: '#E6E8EE',
+  elevated: '#F4F6FA', // light gray for tiles/cards so they read on white
+  primary: '#0D1526', // near-black ink
   secondary: '#5C6B8A',
   tertiary: '#95A2BC',
-  gold: '#2563EB',
+  gold: '#2563EB', // electric blue accent
   overdue: '#EF4444',
   warning: '#F59E0B',
   success: '#16A34A',
   neutral: '#95A2BC',
   subtleBorder: 'rgba(0,0,0,0.07)',
 }
+
+// Relationship-type accent colors (from dialed-kit.jsx `CAT`). Theme-independent.
+export const CategoryColors: Record<string, string> = {
+  Mentor: '#3B6FE8',
+  Friend: '#22C55E',
+  Recruiter: '#EF4444',
+  Professor: '#F59E0B',
+}
+
+// Fallback for unknown/empty relationship types.
+export const DEFAULT_CATEGORY_COLOR = '#6B5C48'
 
 // Dark alias kept for any remaining legacy imports
 export const Colors = DarkColors

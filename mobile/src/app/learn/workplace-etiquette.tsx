@@ -14,6 +14,7 @@ import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed } from '@/lib/learnProgress'
 import { usePro } from '@/hooks/usePro'
 import { getApiUrl } from '@/lib/api'
+import { contentHeaders } from '@/lib/contentApi'
 
 const TOPIC = 'workplace-etiquette'
 const TOTAL_ITEMS = 5
@@ -228,7 +229,7 @@ export default function WorkplaceEtiquettePage() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/outfit-check`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({ imageBase64, industry: selectedIndustry }),
       })
       const data: OutfitResult = await res.json()

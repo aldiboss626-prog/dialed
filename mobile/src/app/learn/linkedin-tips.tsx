@@ -15,6 +15,7 @@ import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed } from '@/lib/learnProgress'
 import { usePro } from '@/hooks/usePro'
 import { getApiUrl } from '@/lib/api'
+import { contentHeaders } from '@/lib/contentApi'
 
 const TOPIC = 'linkedin-tips'
 const TOTAL_ITEMS = 5
@@ -119,7 +120,7 @@ export default function LinkedInTipsPage() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/article`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({ topic: 'linkedin-tips', title: '5 content ideas for students on LinkedIn' }),
       })
       const data = await res.json()
@@ -152,7 +153,7 @@ export default function LinkedInTipsPage() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/linkedin-audit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({ headline: headline.trim(), summary: summary.trim() }),
       })
       const data: AuditResult = await res.json()

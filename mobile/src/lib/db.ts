@@ -37,6 +37,34 @@ async function getUid(): Promise<string> {
   return data.user.id
 }
 
+// ── Sent replies (personalization — the AI draft learns the user's voice) ───────
+// Every reply the user actually sends is saved here; the most recent ones are fed
+// back into /api/content/draft-reply as writing samples so drafts sound like them.
+
+export const sentRepliesDb = {
+  // Most recent reply texts for the current user (RLS scopes to them automatically).
+  recent: async (limit = 5): Promise<string[]> => {
+    const { data, error } = await supabase
+      .from('sent_replies')
+      .select('reply_text')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) return [] // table may not exist yet / offline — personalization is best-effort
+    return (data ?? []).map(r => r.reply_text).filter((t): t is string => !!t)
+  },
+
+  create: async (fields: { reply_text: string; subject?: string | null; contact_id?: number | null }): Promise<void> => {
+    const userId = await getUid()
+    const { error } = await supabase.from('sent_replies').insert({
+      user_id: userId,
+      reply_text: fields.reply_text,
+      subject: fields.subject ?? null,
+      contact_id: fields.contact_id ?? null,
+    })
+    if (error) throw new Error(error.message)
+  },
+}
+
 // ── Contacts ──────────────────────────────────────────────────────────────────
 
 export const contactsDb = {
@@ -131,6 +159,16 @@ export const contactsDb = {
     await clearCache('contacts')
     await clearCache('pending')
     return computeContact(data)
+  },
+
+  // Manually log a history note about this contact (appears in the relationship timeline).
+  addNote: async (id: number, note: string): Promise<void> => {
+    const userId = await getUid()
+    const { error } = await supabase.from('interactions').insert({
+      contact_id: id, user_id: userId, date: new Date().toISOString().slice(0, 10), type: 'note', note: note.trim(),
+    })
+    if (error) throw new Error(error.message)
+    await clearCache('contacts')
   },
 }
 
@@ -256,7 +294,7 @@ export const pendingDb = {
     return withCache('pending', async () => {
       const { data, error } = await supabase
         .from('pending_responses')
-        .select('*, contact:contacts(id,name,stars,role,relationship_type), email_thread:email_threads(subject,date,preview,body)')
+        .select('*, contact:contacts(id,name,stars,role,relationship_type,email), email_thread:email_threads(subject,date,preview,body)')
         .eq('status', 'pending')
         .order('detected_at', { ascending: false })
       if (error) throw new Error(error.message)

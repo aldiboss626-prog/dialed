@@ -12,6 +12,8 @@ import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { roleLabel } from './(tabs)/orbit'
 import { ContactAvatar } from '@/components/ContactAvatar'
+import { FloatingNav } from '@/components/FloatingNav'
+import { AddContactModal } from '@/components/AddContactModal'
 import { contactHealthScore, healthBand, healthColor, healthLabel } from '@/lib/health'
 import type { HealthBandKey } from '@/lib/health'
 import type { Contact } from '@/types'
@@ -97,6 +99,7 @@ export default function PeopleScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [query, setQuery] = useState('')
+  const [addOpen, setAddOpen] = useState(false)
   const initialBand = VALID_BANDS.includes(params.filter as Band) ? (params.filter as Band) : 'all'
   const [filter, setFilter] = useState<Band>(initialBand)
   const scrollRef = useRef<ScrollView>(null)
@@ -153,7 +156,7 @@ export default function PeopleScreen() {
           <Ionicons name="chevron-back" size={24} color={c.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>All People</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/(tabs)/orbit' as any)} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.addBtn} onPress={() => setAddOpen(true)} activeOpacity={0.85}>
           <Ionicons name="add" size={18} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -239,6 +242,21 @@ export default function PeopleScreen() {
           <View style={{ height: 112 }} />
         </ScrollView>
       )}
+
+      <FloatingNav
+        items={[
+          { id: 'network', label: 'Network', icon: 'people-outline', onPress: () => router.navigate({ pathname: '/(tabs)/home', params: { tab: 'network' } } as any) },
+          { id: 'inbox',   label: 'Inbox',   icon: 'mail-outline',   onPress: () => router.navigate({ pathname: '/(tabs)/home', params: { tab: 'inbox' } } as any) },
+          { id: 'add',     label: 'Add',     icon: 'add-circle-outline', onPress: () => setAddOpen(true) },
+          { id: 'search',  label: 'Search',  icon: 'search-outline', onPress: () => router.push('/search' as any) },
+        ]}
+      />
+
+      <AddContactModal
+        visible={addOpen}
+        onClose={() => setAddOpen(false)}
+        onAdded={ct => setContacts(prev => [ct, ...prev])}
+      />
     </SafeAreaView>
   )
 }

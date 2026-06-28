@@ -301,6 +301,7 @@ router.post('/draft-reply', async (req, res) => {
     relationship = '',
     senderName = '',
     intent = 'professional',
+    styleExamples = [],
   } = req.body;
 
   if (!emailText.trim() && !imageBase64) {
@@ -311,10 +312,18 @@ router.post('/draft-reply', async (req, res) => {
   const who = [contactName, contactRole && `(${contactRole})`, relationship && `— your ${relationship}`]
     .filter(Boolean).join(' ');
 
+  // Personalization: feed the user's own past replies so drafts learn their voice over time.
+  const samples = Array.isArray(styleExamples)
+    ? styleExamples.filter(s => typeof s === 'string' && s.trim()).slice(0, 5)
+    : [];
+  const styleBlock = samples.length
+    ? `\nHere are a few replies ${senderName || 'this person'} has written before. Match their voice, tone, greetings, and sign-offs — but do not copy their content:\n"""\n${samples.join('\n---\n')}\n"""\n`
+    : '';
+
   const instructions = `You are helping ${senderName || 'a college student'} reply to an email from ${who}.
 
 Goal for this reply: ${intentLine}
-
+${styleBlock}
 Rules:
 - Match the tone and formality of the original email.
 - Sound human and natural — write in the sender's own voice, not corporate boilerplate.
@@ -346,12 +355,12 @@ Return exactly this JSON:
       });
     } else {
       response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-6',
         max_tokens: 700,
         system: 'You draft email replies. Always respond with valid JSON only — no markdown, no extra text.',
         messages: [{
           role: 'user',
-          content: `Here is the email to reply to:\n"""\n${emailText}\n"""\n\n${instructions}`,
+          content: `Here is the email to reply to:\n"""\n${String(emailText).slice(0, 8000)}\n"""\n\n${instructions}`,
         }],
       });
     }
@@ -361,6 +370,52 @@ Return exactly this JSON:
   } catch (err) {
     console.error('Draft reply error:', err);
     res.status(500).json({ error: 'Failed to draft reply' });
+  }
+});
+
+// POST /api/content/scan-card — read a business card photo and extract contact fields
+router.post('/scan-card', async (req, res) => {
+  const { imageBase64 = '' } = req.body;
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+
+  try {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 400,
+      system: 'You read a business card from a photo and extract the contact details. Always respond with valid JSON only — no markdown, no extra text.',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
+          {
+            type: 'text',
+            text: `The image above is a business card. Extract the person's contact details.
+
+Rules:
+- Use an empty string "" for any field you cannot find on the card. Do not guess or invent values.
+- "name" is the person's full name (not the company).
+- "title" is their job title / role (e.g. "Product Designer", "VP of Sales").
+- "company" is the organization name.
+- For email and phone, copy them exactly as printed. Pick the primary one if several are listed.
+
+Return exactly this JSON:
+{
+  "name": "",
+  "title": "",
+  "company": "",
+  "email": "",
+  "phone": ""
+}`,
+          },
+        ],
+      }],
+    });
+
+    const data = parseJson(response.content[0].text);
+    res.json(data);
+  } catch (err) {
+    console.error('Scan card error:', err);
+    res.status(500).json({ error: 'Failed to scan card' });
   }
 });
 

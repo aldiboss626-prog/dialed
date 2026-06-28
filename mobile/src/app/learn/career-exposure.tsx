@@ -15,6 +15,7 @@ import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed } from '@/lib/learnProgress'
 import { usePro } from '@/hooks/usePro'
 import { getApiUrl } from '@/lib/api'
+import { contentHeaders } from '@/lib/contentApi'
 
 const TOPIC = 'career-exposure'
 const TOTAL_ITEMS = 5
@@ -169,7 +170,7 @@ export default function CareerExposurePage() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/resume-copy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({
           role: targetRole,
           level: expLevel,
@@ -236,7 +237,7 @@ export default function CareerExposurePage() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/company-plan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({ company: company.name, status: company.status }),
       })
       const data = await res.json()

@@ -1,21 +1,24 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet,
-  ActivityIndicator, Alert, Linking, PanResponder,
+  ActivityIndicator, Alert, Linking, PanResponder, Share,
 } from 'react-native'
+import * as Clipboard from 'expo-clipboard'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useAuth } from '@/hooks/useAuth'
 import { usePro } from '@/hooks/usePro'
 import { useDevPro } from '@/hooks/useDevPro'
-import { FontFamily, Radius, Spacing } from '@/constants/theme'
+import { FontFamily, Radius, CategoryColors } from '@/constants/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { useColors, useThemeMode } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { useTabBarPadding } from '@/components/FloatingTabBar'
 import { ImportSelectionModal } from '@/components/ImportSelectionModal'
 import { contactsDb } from '@/lib/db'
+import { deleteAccount } from '@/lib/contentApi'
+import { haptic } from '@/lib/haptics'
 import { gmailApi, loadPhoneContacts } from '@/lib/api'
 import type { GmailStatus, ImportCandidate } from '@/types'
 
@@ -23,116 +26,92 @@ export const TITLE_PREF_KEY = 'dialed_title_pref'
 export const TITLE_OPTIONS = ['', 'Mr.', 'Ms.', 'Mrs.', 'Dr.', 'Master', 'Coach']
 const NOTIFS_KEY = 'dialed_notif_prefs'
 
-const REL_CADENCES = [
-  { type: 'Recruiter', days: 7 },
-  { type: 'Professor', days: 10 },
-  { type: 'Mentor', days: 14 },
-  { type: 'Friend', days: 21 },
+type IconName = keyof typeof Ionicons.glyphMap
+// A tiny indicator stacked on a tile: a colored notification dot, or a mini glyph (e.g. a warning triangle).
+type TileBadge = { dot: string } | { icon: IconName; color: string }
+
+const REL_CADENCES: { type: string; days: number; icon: IconName; color: string; badge?: TileBadge }[] = [
+  { type: 'Recruiter', days: 7,  icon: 'briefcase-outline', color: CategoryColors.Recruiter },
+  { type: 'Professor', days: 10, icon: 'school-outline',    color: CategoryColors.Professor },
+  { type: 'Mentor',    days: 14, icon: 'person-outline',    color: CategoryColors.Mentor, badge: { icon: 'star', color: CategoryColors.Mentor } },
+  { type: 'Friend',    days: 21, icon: 'people-outline',    color: CategoryColors.Friend },
 ]
 
-function makeStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: c.background },
-    content: { paddingHorizontal: 16, paddingTop: 20 },
-    title: { fontFamily: FontFamily.display, fontSize: 32, color: c.primary, marginBottom: 20 },
-    sectionLabel: {
-      fontFamily: FontFamily.sans, fontSize: 11, color: c.tertiary,
-      letterSpacing: 2.5, marginBottom: 8, marginTop: 12,
-    },
-    accountCard: {
-      flexDirection: 'row', alignItems: 'center', gap: 14,
-      backgroundColor: c.surface, borderRadius: Radius.card,
-      padding: 18, marginBottom: 24,
-      borderWidth: 1, borderColor: c.subtleBorder,
-    },
-    avatar: {
-      width: 48, height: 48, borderRadius: 14,
-      backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    },
-    avatarText: { fontFamily: FontFamily.sans, fontSize: 16, color: c.secondary },
-    userName: { fontFamily: FontFamily.display, fontSize: 18, color: c.primary },
-    userEmail: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginTop: 2 },
-    card: {
-      backgroundColor: c.surface, borderRadius: Radius.card,
-      paddingHorizontal: 16, marginBottom: 24,
-      borderWidth: 1, borderColor: c.subtleBorder,
-    },
-    gmailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14 },
-    gmailDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-    syncBtn: {
-      borderWidth: 1, borderColor: c.gold, borderRadius: Radius.full,
-      paddingVertical: 8, alignItems: 'center', marginBottom: 14,
-    },
-    syncBtnText: { fontFamily: FontFamily.sans, fontSize: 13, color: c.gold },
-    cadenceRow: {
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14,
-    },
-    cadenceDays: { fontFamily: FontFamily.sans, fontSize: 13, color: c.gold },
-    toggleRow: {
-      flexDirection: 'row', alignItems: 'center', paddingVertical: 14,
-    },
-    rowDivider: { borderBottomWidth: 1, borderBottomColor: c.border },
-    rowLabel: { fontFamily: FontFamily.sans, fontSize: 15, color: c.primary },
-    rowSub: { fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary, marginTop: 2 },
-    signOutBtn: { paddingVertical: Spacing.lg, alignItems: 'center' },
-    signOutText: { fontFamily: FontFamily.sans, fontSize: 14, color: c.overdue, opacity: 0.7 },
-    titleChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 14 },
-    titleChip: {
-      borderWidth: 1, borderColor: c.border, borderRadius: Radius.full,
-      paddingHorizontal: 12, paddingVertical: 6,
-    },
-    titleChipActive: { borderColor: c.gold, backgroundColor: c.gold + '18' },
-    titleChipText: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary },
-    titleChipTextActive: { color: c.gold },
-    titleHint: { fontFamily: FontFamily.sans, fontSize: 11, color: c.tertiary, paddingBottom: 14 },
-    importBtn: {
-      borderWidth: 1, borderColor: c.gold, borderRadius: Radius.full,
-      paddingVertical: 8, alignItems: 'center', marginBottom: 14, flexDirection: 'row',
-      justifyContent: 'center', gap: 6,
-    },
-    importBtnText: { fontFamily: FontFamily.sans, fontSize: 13, color: c.gold },
-    importRow: { flexDirection: 'row', gap: 8, paddingBottom: 14 },
-    importHalfBtn: {
-      flex: 1, borderWidth: 1, borderColor: c.gold, borderRadius: Radius.full,
-      paddingVertical: 8, alignItems: 'center', justifyContent: 'center',
-    },
-    proCard: {
-      backgroundColor: c.surface, borderRadius: Radius.card,
-      padding: 16, marginBottom: 24,
-      borderWidth: 1, borderColor: c.gold + '40',
-    },
-    proBadge: {
-      alignSelf: 'flex-start', backgroundColor: c.gold + '18',
-      borderWidth: 1, borderColor: c.gold + '40',
-      borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 4,
-      marginBottom: 10,
-    },
-    proBadgeText: { fontFamily: FontFamily.sansMedium, fontSize: 10, color: c.gold, letterSpacing: 1.5 },
-    proUpgradeBtn: {
-      backgroundColor: c.gold, borderRadius: Radius.card,
-      paddingVertical: 12, alignItems: 'center', marginTop: 12,
-    },
-    proUpgradeBtnText: { fontFamily: FontFamily.display, fontSize: 15, color: '#fff' },
-    proManageBtn: {
-      borderWidth: 1, borderColor: c.border, borderRadius: Radius.card,
-      paddingVertical: 12, alignItems: 'center', marginTop: 8,
-    },
-    proManageBtnText: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary },
-  })
+// UI-only: a stable, friendly-looking referral code derived from the account.
+// Real issuance/verification is backend (later). Skips ambiguous chars (0/O/1/I).
+function referralCodeFor(seed: string): string {
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let h = 2166136261 >>> 0
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i)
+    h = Math.imul(h, 16777619) >>> 0
+  }
+  let out = ''
+  for (let i = 0; i < 5; i++) {
+    out += ALPHABET[h % 32]
+    h = (Math.imul(h, 16777619) ^ (i + 1)) >>> 0
+  }
+  return `DIALED-${out}`
 }
 
-function SectionLabel({ label, styles }: { label: string; styles: ReturnType<typeof makeStyles> }) {
-  return <Text style={styles.sectionLabel}>{label}</Text>
+// ── Reusable row primitives ───────────────────────────────────────────────────
+
+// Premium iOS-style icon tile: a clean white rounded square with a hairline border.
+// Only the glyph carries color — no tinted fills, gradients, or shadows.
+function IconTile({ name, color, c, badge }: { name: IconName; color: string; c: ColorPalette; badge?: TileBadge }) {
+  return (
+    <View style={{
+      width: 30, height: 30, borderRadius: 9,
+      backgroundColor: c.surface, borderWidth: 1, borderColor: c.border,
+      alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Ionicons name={name} size={17} color={color} />
+      {badge && ('dot' in badge ? (
+        <View style={{
+          position: 'absolute', top: 2.5, right: 2.5, width: 8, height: 8, borderRadius: 4,
+          backgroundColor: badge.dot, borderWidth: 1.5, borderColor: c.surface,
+        }} />
+      ) : (
+        <View style={{ position: 'absolute', top: -3, right: -3, backgroundColor: c.surface, borderRadius: 8 }}>
+          <Ionicons name={badge.icon} size={13} color={badge.color} />
+        </View>
+      ))}
+    </View>
+  )
 }
 
-function ToggleRow({ label, sub, enabled, onToggle, last, styles, c }: {
-  label: string; sub?: string; enabled: boolean; onToggle: () => void; last?: boolean
-  styles: ReturnType<typeof makeStyles>
-  c: ColorPalette
+function LinkRow({ icon, iconColor, badge, label, value, valueColor, statusDot, last, onPress, styles, c }: {
+  icon: IconName; iconColor?: string; badge?: TileBadge; label: string; value?: string; valueColor?: string
+  statusDot?: string; last?: boolean; onPress?: () => void
+  styles: ReturnType<typeof makeStyles>; c: ColorPalette
 }) {
   return (
-    <View style={[styles.toggleRow, !last && styles.rowDivider]}>
-      <View style={{ flex: 1, marginRight: 12 }}>
+    <TouchableOpacity
+      style={[styles.row, !last && styles.rowDivider]}
+      onPress={onPress}
+      disabled={!onPress}
+      activeOpacity={0.6}
+    >
+      <IconTile name={icon} color={iconColor ?? c.secondary} c={c} badge={badge} />
+      <Text style={styles.rowLabel}>{label}</Text>
+      <View style={styles.rowRight}>
+        {!!statusDot && <View style={[styles.dot, { backgroundColor: statusDot }]} />}
+        {!!value && <Text style={[styles.rowValue, valueColor ? { color: valueColor } : null]}>{value}</Text>}
+        {!!onPress && <Ionicons name="chevron-forward" size={18} color={c.tertiary} />}
+      </View>
+    </TouchableOpacity>
+  )
+}
+
+function ToggleRow({ icon, iconColor, badge, label, sub, enabled, onToggle, last, styles, c }: {
+  icon: IconName; iconColor?: string; badge?: TileBadge; label: string; sub?: string
+  enabled: boolean; onToggle: () => void; last?: boolean
+  styles: ReturnType<typeof makeStyles>; c: ColorPalette
+}) {
+  return (
+    <View style={[styles.row, !last && styles.rowDivider]}>
+      <IconTile name={icon} color={iconColor ?? c.secondary} c={c} badge={badge} />
+      <View style={{ flex: 1 }}>
         <Text style={styles.rowLabel}>{label}</Text>
         {!!sub && <Text style={styles.rowSub}>{sub}</Text>}
       </View>
@@ -146,6 +125,12 @@ function ToggleRow({ label, sub, enabled, onToggle, last, styles, c }: {
     </View>
   )
 }
+
+function SectionLabel({ label, styles }: { label: string; styles: ReturnType<typeof makeStyles> }) {
+  return <Text style={styles.sectionLabel}>{label}</Text>
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth()
@@ -257,6 +242,29 @@ export default function SettingsScreen() {
     router.replace('/login')
   }
 
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Delete account?',
+      'This permanently erases your account and everything in it — contacts, opportunities, emails, and saved replies. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete forever',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAccount()
+              await logout()
+              router.replace('/login')
+            } catch (e: any) {
+              Alert.alert('Could not delete account', e?.message ?? 'Please try again.')
+            }
+          },
+        },
+      ],
+    )
+  }
+
   const initials = user?.name?.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2) ?? '?'
   function toggle(key: keyof typeof notifs) {
     setNotifs(prev => {
@@ -264,6 +272,20 @@ export default function SettingsScreen() {
       AsyncStorage.setItem(NOTIFS_KEY, JSON.stringify(next)).catch(() => {})
       return next
     })
+  }
+
+  const referralCode = referralCodeFor(user?.email || user?.name || 'dialed')
+
+  async function handleCopyCode() {
+    await Clipboard.setStringAsync(referralCode)
+    haptic.success()
+    Alert.alert('Copied', `Your referral code ${referralCode} is on the clipboard.`)
+  }
+
+  function handleShareCode() {
+    Share.share({
+      message: `Join me on Dialed and keep your network warm. Use my code ${referralCode} when you upgrade to Pro.`,
+    }).catch(() => {})
   }
 
   // Swipe right to dismiss — ScrollView only captures vertical touches so
@@ -281,223 +303,268 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={{ flex: 1 }} {...swipePan.panHandlers}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingBottom: tabBarPadding + 64 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <Text style={styles.title}>Settings</Text>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-            style={{
-              width: 36, height: 36, borderRadius: 18,
-              backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="close" size={20} color={c.secondary} />
+        {/* Centered header with back arrow */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} activeOpacity={0.6}>
+            <Ionicons name="chevron-back" size={26} color={c.primary} />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Settings</Text>
+          <View style={styles.headerBtn} />
         </View>
 
-        <SectionLabel label="ACCOUNT" styles={styles} />
-        <View style={styles.accountCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingBottom: tabBarPadding + 64 }]}>
+
+          {/* ACCOUNT */}
+          <SectionLabel label="ACCOUNT" styles={styles} />
+          <View style={styles.card}>
+            <TouchableOpacity style={styles.row} activeOpacity={0.6}>
+              <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.userName}>{user?.name}</Text>
+                <Text style={styles.userEmail}>{user?.email}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={c.tertiary} />
+            </TouchableOpacity>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.userName}>{user?.name}</Text>
-            <Text style={styles.userEmail}>{user?.email}</Text>
+
+          {/* APPEARANCE */}
+          <SectionLabel label="APPEARANCE" styles={styles} />
+          <View style={styles.card}>
+            <ToggleRow
+              icon="moon-outline"
+              label="Dark Mode"
+              enabled={mode === 'dark'}
+              onToggle={toggleTheme}
+              last styles={styles} c={c}
+            />
           </View>
-        </View>
 
-        <SectionLabel label="APPEARANCE" styles={styles} />
-        <View style={styles.card}>
-          <ToggleRow
-            label="Dark Mode"
-            sub={mode === 'dark' ? 'Currently using dark theme' : 'Currently using Cal AI warm style'}
-            enabled={mode === 'dark'}
-            onToggle={toggleTheme}
-            last
-            styles={styles} c={c}
-          />
-        </View>
+          {/* GREETING TITLE */}
+          <SectionLabel label="GREETING TITLE" styles={styles} />
+          <View style={styles.card}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.titleChips}>
+              {TITLE_OPTIONS.map(t => (
+                <TouchableOpacity
+                  key={t || 'none'}
+                  onPress={() => selectTitle(t)}
+                  style={[styles.titleChip, titlePref === t && styles.titleChipActive]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.titleChipText, titlePref === t && styles.titleChipTextActive]}>{t || 'None'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
 
-        <SectionLabel label="GREETING TITLE" styles={styles} />
-        <View style={styles.card}>
-          <View style={styles.titleChips}>
-            {TITLE_OPTIONS.map(t => (
-              <TouchableOpacity
-                key={t || 'none'}
-                onPress={() => selectTitle(t)}
-                style={[styles.titleChip, titlePref === t && styles.titleChipActive]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.titleChipText, titlePref === t && styles.titleChipTextActive]}>
-                  {t || 'None'}
-                </Text>
-              </TouchableOpacity>
+          {/* GMAIL */}
+          <SectionLabel label="GMAIL" styles={styles} />
+          <View style={styles.card}>
+            <LinkRow
+              icon="mail" iconColor="#EA4335" label="Gmail"
+              value={gmail?.connected ? 'Connected' : gmail ? 'Not connected' : 'Loading…'}
+              valueColor={gmail?.connected ? c.success : c.tertiary}
+              statusDot={gmail?.connected ? c.success : undefined}
+              onPress={() => {}}
+              styles={styles} c={c}
+            />
+            <TouchableOpacity style={[styles.row, styles.rowDivider]} onPress={handleSync} disabled={syncing} activeOpacity={0.6}>
+              <IconTile name="sync" color={c.gold} c={c} />
+              <Text style={styles.rowLabel}>Sync Gmail</Text>
+              <View style={styles.rowRight}>
+                {syncing ? <ActivityIndicator size="small" color={c.gold} /> : <Ionicons name="chevron-forward" size={18} color={c.tertiary} />}
+              </View>
+            </TouchableOpacity>
+            <LinkRow
+              icon="people-outline" iconColor={c.success} label="Import Contacts" value="from Google"
+              onPress={handleImportGoogle} last styles={styles} c={c}
+            />
+          </View>
+
+          {/* PHONE CONTACTS */}
+          <SectionLabel label="PHONE CONTACTS" styles={styles} />
+          <View style={styles.card}>
+            <LinkRow icon="call-outline" iconColor={c.success} label="Import from Phone" onPress={handleImportPhone} last styles={styles} c={c} />
+          </View>
+
+          {/* DEFAULT CADENCES */}
+          <SectionLabel label="DEFAULT CADENCES" styles={styles} />
+          <View style={styles.card}>
+            {REL_CADENCES.map((rc, i) => (
+              <LinkRow
+                key={rc.type}
+                icon={rc.icon} iconColor={rc.color} badge={rc.badge} label={rc.type}
+                value={`every ${rc.days} days`}
+                onPress={() => {}}
+                last={i === REL_CADENCES.length - 1}
+                styles={styles} c={c}
+              />
             ))}
           </View>
-          <Text style={styles.titleHint}>
-            {titlePref
-              ? `Welcome screen will say "${titlePref} ${user?.name?.split(' ').slice(-1)[0] ?? ''}"`
-              : `Welcome screen will use your first name`}
-          </Text>
-        </View>
 
-        <SectionLabel label="GMAIL" styles={styles} />
-        <View style={styles.card}>
-          <View style={styles.gmailRow}>
-            <View style={[styles.gmailDot, { backgroundColor: gmail?.connected ? c.success : c.tertiary }]} />
-            <Text style={styles.rowLabel} numberOfLines={1}>
-              {gmail ? (gmail.connected ? `Connected · ${gmail.email}` : 'Not connected') : 'Loading…'}
-            </Text>
+          {/* EMAIL REMINDERS */}
+          <SectionLabel label="EMAIL REMINDERS" styles={styles} />
+          <View style={styles.card}>
+            <ToggleRow icon="mail-outline" iconColor={c.gold} badge={{ dot: c.gold }} label="Unanswered email nudges" enabled={notifs.emailReminder} onToggle={() => toggle('emailReminder')} styles={styles} c={c} />
+            <ToggleRow icon="notifications-outline" iconColor={c.warning} label="Escalating reminders" enabled={notifs.escalation} onToggle={() => toggle('escalation')} last styles={styles} c={c} />
           </View>
-          <View style={styles.importRow}>
-            <TouchableOpacity
-              onPress={handleSync}
-              disabled={syncing}
-              style={[styles.importHalfBtn, syncing && { opacity: 0.5 }]}
-              activeOpacity={0.7}
-            >
-              {syncing
-                ? <ActivityIndicator size="small" color={c.gold} />
-                : <Text style={styles.importBtnText}>Sync Gmail</Text>
-              }
+
+          {/* OPPORTUNITY REMINDERS */}
+          <SectionLabel label="OPPORTUNITY REMINDERS" styles={styles} />
+          <View style={styles.card}>
+            <ToggleRow icon="calendar-outline" iconColor={c.warning} badge={{ icon: 'warning', color: c.warning }} label="Deadline alerts" enabled={notifs.deadline} onToggle={() => toggle('deadline')} styles={styles} c={c} />
+            <ToggleRow icon="trending-up-outline" iconColor={c.warning} label="Escalating deadline reminders" enabled={notifs.opportunityReminder} onToggle={() => toggle('opportunityReminder')} last styles={styles} c={c} />
+          </View>
+
+          {/* GENERAL */}
+          <SectionLabel label="GENERAL" styles={styles} />
+          <View style={styles.card}>
+            <ToggleRow icon="notifications-outline" label="Push notifications" enabled={notifs.push} onToggle={() => toggle('push')} styles={styles} c={c} />
+            <ToggleRow icon="sunny-outline" label="Daily digest" sub="morning orbit summary" enabled={notifs.digest} onToggle={() => toggle('digest')} last styles={styles} c={c} />
+          </View>
+
+          {/* MEMBERSHIP */}
+          <SectionLabel label="MEMBERSHIP" styles={styles} />
+          <View style={styles.card}>
+            <TouchableOpacity style={[styles.row, styles.rowDivider]} activeOpacity={0.6} onPress={isPro ? undefined : openUpgrade} disabled={isPro}>
+              <View style={[styles.badge, { backgroundColor: isPro ? c.gold : c.tertiary }]}>
+                <Text style={styles.badgeText}>{isPro ? 'PRO' : 'FREE'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>{isPro ? 'Pro Plan' : 'Free Plan'}</Text>
+                <Text style={styles.rowSub}>{isPro ? "You're on the Pro plan" : 'Tap to unlock everything'}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={c.tertiary} />
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleImportGoogle}
-              style={styles.importHalfBtn}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.importBtnText}>Import Contacts</Text>
+            <LinkRow icon="card-outline" label="Manage Subscription" onPress={() => {}} last styles={styles} c={c} />
+          </View>
+
+          {/* INVITE FRIENDS */}
+          <SectionLabel label="INVITE FRIENDS" styles={styles} />
+          <View style={styles.card}>
+            {isPro ? (
+              <>
+                <View style={[styles.row, styles.rowDivider]}>
+                  <IconTile name="gift-outline" color={c.gold} c={c} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowSub}>Your referral code</Text>
+                    <Text style={styles.refCode}>{referralCode}</Text>
+                  </View>
+                  <TouchableOpacity onPress={handleCopyCode} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.6}>
+                    <Ionicons name="copy-outline" size={20} color={c.gold} />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={styles.row} onPress={handleShareCode} activeOpacity={0.6}>
+                  <IconTile name="share-social-outline" color={c.gold} c={c} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowLabel}>Share invite</Text>
+                    <Text style={styles.rowSub}>2 friends on Pro = 1 free month</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={c.tertiary} />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <LinkRow
+                icon="gift-outline" iconColor={c.gold} label="Unlock your referral code"
+                value="Pro" valueColor={c.gold}
+                onPress={openUpgrade} last styles={styles} c={c}
+              />
+            )}
+          </View>
+
+          {/* DEV MODE */}
+          <SectionLabel label="DEV MODE" styles={styles} />
+          <View style={styles.card}>
+            <ToggleRow
+              icon="code-slash-outline" label="Force Pro Access" sub="Overrides your real tier — for testing only"
+              enabled={devProOverride} onToggle={() => setDevProOverride(!devProOverride)} last styles={styles} c={c}
+            />
+          </View>
+
+          {/* SIGN OUT + DELETE ACCOUNT */}
+          <View style={[styles.card, { marginTop: 4 }]}>
+            <TouchableOpacity style={[styles.row, styles.rowDivider]} onPress={handleLogout} activeOpacity={0.6}>
+              <IconTile name="log-out-outline" color={c.secondary} c={c} />
+              <Text style={styles.rowLabel}>Sign Out</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.row} onPress={handleDeleteAccount} activeOpacity={0.6}>
+              <IconTile name="trash-outline" color={c.overdue} c={c} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowLabel, { color: c.overdue }]}>Delete Account</Text>
+                <Text style={styles.rowSub}>Permanently erase your account and all data</Text>
+              </View>
             </TouchableOpacity>
           </View>
-        </View>
 
-        <SectionLabel label="PHONE CONTACTS" styles={styles} />
-        <View style={styles.card}>
-          <TouchableOpacity
-            onPress={handleImportPhone}
-            style={[styles.importBtn, { marginTop: 14 }]}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.importBtnText}>Import from Phone</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={{ height: 16 }} />
+        </ScrollView>
 
-        <SectionLabel label="DEFAULT CADENCES" styles={styles} />
-        <View style={styles.card}>
-          {REL_CADENCES.map((rc, i) => (
-            <View key={rc.type} style={[styles.cadenceRow, i < REL_CADENCES.length - 1 && styles.rowDivider]}>
-              <Text style={styles.rowLabel}>{rc.type}</Text>
-              <Text style={styles.cadenceDays}>every {rc.days} days</Text>
-            </View>
-          ))}
-        </View>
-
-        <SectionLabel label="EMAIL REMINDERS" styles={styles} />
-        <View style={styles.card}>
-          <ToggleRow
-            label="Unanswered email nudges"
-            sub="Remind me when I haven't replied to someone"
-            enabled={notifs.emailReminder}
-            onToggle={() => toggle('emailReminder')}
-            styles={styles} c={c}
-          />
-          <ToggleRow
-            label="Escalating reminders"
-            sub="Increase frequency the longer I leave it"
-            enabled={notifs.escalation}
-            onToggle={() => toggle('escalation')}
-            last
-            styles={styles} c={c}
-          />
-        </View>
-
-        <SectionLabel label="OPPORTUNITY REMINDERS" styles={styles} />
-        <View style={styles.card}>
-          <ToggleRow
-            label="Deadline alerts"
-            sub="Notify me as deadlines approach"
-            enabled={notifs.deadline}
-            onToggle={() => toggle('deadline')}
-            styles={styles} c={c}
-          />
-          <ToggleRow
-            label="Escalating deadline reminders"
-            sub="Multiple alerts as deadline gets closer"
-            enabled={notifs.opportunityReminder}
-            onToggle={() => toggle('opportunityReminder')}
-            last
-            styles={styles} c={c}
-          />
-        </View>
-
-        <SectionLabel label="GENERAL" styles={styles} />
-        <View style={styles.card}>
-          <ToggleRow
-            label="Push notifications"
-            enabled={notifs.push}
-            onToggle={() => toggle('push')}
-            styles={styles} c={c}
-          />
-          <ToggleRow
-            label="Daily digest"
-            sub="Morning summary of your orbit"
-            enabled={notifs.digest}
-            onToggle={() => toggle('digest')}
-            last
-            styles={styles} c={c}
-          />
-        </View>
-
-        <SectionLabel label="MEMBERSHIP" styles={styles} />
-        <View style={styles.proCard}>
-          <View style={styles.proBadge}>
-            <Text style={styles.proBadgeText}>{isPro ? 'PRO' : 'FREE'}</Text>
-          </View>
-          <Text style={styles.rowLabel}>{isPro ? 'Dialed Pro' : 'Free Plan'}</Text>
-          <Text style={[styles.rowSub, { marginTop: 4 }]}>
-            {isPro
-              ? 'Gmail sync, escalation, AI tools, and full analytics are active.'
-              : 'Upgrade to unlock Gmail sync, AI tools, analytics, and escalating reminders.'}
-          </Text>
-          {isPro ? (
-            <TouchableOpacity style={styles.proManageBtn} activeOpacity={0.7}>
-              <Text style={styles.proManageBtnText}>Manage Subscription</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.proUpgradeBtn} onPress={openUpgrade} activeOpacity={0.85}>
-              <Text style={styles.proUpgradeBtnText}>Upgrade to Pro</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <SectionLabel label="DEV MODE" styles={styles} />
-        <View style={styles.card}>
-          <ToggleRow
-            label="Force Pro Access"
-            sub="Overrides your real tier — for testing only"
-            enabled={devProOverride}
-            onToggle={() => setDevProOverride(!devProOverride)}
-            last
-            styles={styles} c={c}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.signOutBtn} onPress={handleLogout} activeOpacity={0.7}>
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 16 }} />
-      </ScrollView>
-
-      <ImportSelectionModal
-        visible={importSource !== null}
-        candidates={importCandidates}
-        loading={importLoading}
-        onClose={() => setImportSource(null)}
-        onImport={handleConfirmImport}
-      />
+        <ImportSelectionModal
+          visible={importSource !== null}
+          candidates={importCandidates}
+          loading={importLoading}
+          onClose={() => setImportSource(null)}
+          onImport={handleConfirmImport}
+        />
       </View>
     </SafeAreaView>
   )
+}
+
+// ── Styles ──────────────────────────────────────────────────────────────────
+
+function makeStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.background },
+
+    header: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingHorizontal: 12, paddingVertical: 8,
+    },
+    headerBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+    headerTitle: { flex: 1, textAlign: 'center', fontFamily: FontFamily.sansMedium, fontSize: 17, color: c.primary },
+
+    content: { paddingHorizontal: 16, paddingTop: 8 },
+
+    sectionLabel: {
+      fontFamily: FontFamily.sans, fontSize: 11, color: c.tertiary,
+      letterSpacing: 1.5, marginBottom: 8, marginTop: 18, marginLeft: 4,
+    },
+
+    card: {
+      backgroundColor: c.surface, borderRadius: Radius.card,
+      paddingHorizontal: 14, borderWidth: 1, borderColor: c.subtleBorder,
+    },
+
+    row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
+    rowDivider: { borderBottomWidth: 1, borderBottomColor: c.border },
+    rowLabel: { flex: 1, fontFamily: FontFamily.sans, fontSize: 15, color: c.primary },
+    rowSub: { fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary, marginTop: 2 },
+    rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    rowValue: { fontFamily: FontFamily.sans, fontSize: 13.5, color: c.tertiary },
+    refCode: { fontFamily: FontFamily.display, fontSize: 17, color: c.primary, letterSpacing: 1.5, marginTop: 1 },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+
+    avatar: {
+      width: 44, height: 44, borderRadius: 13,
+      backgroundColor: c.gold + '22', alignItems: 'center', justifyContent: 'center',
+    },
+    avatarText: { fontFamily: FontFamily.sansMedium, fontSize: 16, color: c.gold },
+    userName: { fontFamily: FontFamily.sansMedium, fontSize: 16, color: c.primary },
+    userEmail: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginTop: 2 },
+
+    badge: {
+      width: 30, height: 30, borderRadius: 9,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    badgeText: { fontFamily: FontFamily.sansMedium, fontSize: 9, color: '#fff', letterSpacing: 0.5 },
+
+    titleChips: { gap: 8, paddingVertical: 14, paddingRight: 4 },
+    titleChip: {
+      borderWidth: 1, borderColor: c.border, borderRadius: Radius.full,
+      paddingHorizontal: 14, paddingVertical: 7,
+    },
+    titleChipActive: { borderColor: c.gold, backgroundColor: c.gold + '18' },
+    titleChipText: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary },
+    titleChipTextActive: { color: c.gold },
+  })
 }

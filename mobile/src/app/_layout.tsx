@@ -61,9 +61,12 @@ export default function RootLayout() {
               <Stack.Screen name="contact/[id]" options={{ animation: 'ios_from_right' }} />
               <Stack.Screen name="reply" options={{ animation: 'ios_from_right', gestureEnabled: true }} />
               <Stack.Screen name="search" options={{ animation: 'ios_from_right' }} />
+              <Stack.Screen name="profile" options={{ animation: 'ios_from_right', gestureEnabled: true }} />
               <Stack.Screen name="settings" options={{ animation: 'ios_from_right', gestureEnabled: true }} />
               <Stack.Screen name="upgrade" options={{ animation: 'fade', gestureEnabled: false }} />
               <Stack.Screen name="onboarding" options={{ animation: 'fade', gestureEnabled: false }} />
+              <Stack.Screen name="mascot-demo" options={{ animation: 'ios_from_right', gestureEnabled: true }} />
+              <Stack.Screen name="inbox-settings" options={{ animation: 'ios_from_right', gestureEnabled: true }} />
               <Stack.Screen name="permissions" options={{ animation: 'fade', gestureEnabled: false }} />
             </Stack>
             <GlobalActionsOverlay />

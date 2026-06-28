@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity,
   Modal, Pressable,
@@ -11,6 +11,7 @@ import { FontFamily } from '@/constants/theme'
 import { useColors } from '@/hooks/use-theme'
 import { ContactAvatar } from '@/components/ContactAvatar'
 import { AddContactModal } from '@/components/AddContactModal'
+import { FloatingNav } from '@/components/FloatingNav'
 import type { Contact } from '@/types'
 
 // ── Types / helpers ───────────────────────────────────────────────────────────
@@ -254,6 +255,7 @@ export default function AllContactsScreen() {
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  const scrollRef = useRef<ScrollView>(null)
 
   const load = useCallback(async () => {
     const cts = await contactsDb.list(fresh => setContacts(fresh))
@@ -382,9 +384,10 @@ export default function AllContactsScreen() {
 
       {/* Contact list */}
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
       >
         {results.length === 0 ? (
           <View style={{ alignItems: 'center', paddingTop: 60, gap: 10 }}>
@@ -502,6 +505,15 @@ export default function AllContactsScreen() {
         visible={addOpen}
         onClose={() => setAddOpen(false)}
         onAdded={ct => { setContacts(prev => [ct, ...prev]); setAddOpen(false) }}
+      />
+
+      <FloatingNav
+        items={[
+          { id: 'network', label: 'Network', icon: 'people-outline', onPress: () => router.navigate({ pathname: '/(tabs)/home', params: { tab: 'network' } } as any) },
+          { id: 'inbox',   label: 'Inbox',   icon: 'mail-outline',   onPress: () => router.navigate({ pathname: '/(tabs)/home', params: { tab: 'inbox' } } as any) },
+          { id: 'add',     label: 'Add',     icon: 'add-circle-outline', onPress: () => setAddOpen(true) },
+          { id: 'search',  label: 'Search',  icon: 'search', onPress: () => scrollRef.current?.scrollTo({ y: 0, animated: true }) },
+        ]}
       />
     </SafeAreaView>
   )

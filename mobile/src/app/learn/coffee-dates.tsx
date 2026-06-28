@@ -14,6 +14,7 @@ import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed } from '@/lib/learnProgress'
 import { usePro } from '@/hooks/usePro'
 import { getApiUrl } from '@/lib/api'
+import { contentHeaders } from '@/lib/contentApi'
 
 const TOPIC = 'coffee-dates'
 const TOTAL_ITEMS = 4
@@ -149,7 +150,7 @@ export default function CoffeeDatesPage() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/venue-suggestions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({ city: city.trim() }),
       })
       if (!res.ok) throw new Error(`Server error ${res.status}`)

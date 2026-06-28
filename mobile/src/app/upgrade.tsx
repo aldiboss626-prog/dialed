@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated } from 'react-native'
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated,
+  TextInput, KeyboardAvoidingView, Platform,
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter, useNavigation } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -7,8 +10,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { FontFamily, Radius } from '@/constants/theme'
+import { haptic } from '@/lib/haptics'
 
-type UpgradeView = 'features' | 'trial' | 'downsell' | 'tutorial'
+type UpgradeView = 'features' | 'referral' | 'redeem' | 'trial' | 'downsell' | 'tutorial'
 
 const DEV_PRO_KEY = 'dialed_dev_pro_override'
 
@@ -157,6 +161,302 @@ function featStyles(c: ColorPalette) {
       backgroundColor: c.primary, borderRadius: Radius.full,
       paddingVertical: 17, alignItems: 'center',
     },
+    btnText: { fontFamily: FontFamily.display, fontSize: 17, color: c.background },
+    dismissRow: { alignItems: 'center', paddingVertical: 4 },
+    dismissText: { fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary },
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Referral teaser  (pay to unlock your code — shown right before the paywall)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REFERRAL_LADDER = [
+  { months: '1 month',  friend: '2 friends' },
+  { months: '2 months', friend: '4 friends' },
+  { months: '3 months', friend: '6 friends' },
+]
+
+function ReferralView({ c, onNext, onBack, onDismiss }: {
+  c: ColorPalette
+  onNext: () => void
+  onBack: () => void
+  onDismiss: () => void
+}) {
+  const s = referralStyles(c)
+
+  // Light staggered entrance for the ladder nodes, matching the app's feel.
+  const nodeAnims = useRef(REFERRAL_LADDER.map(() => new Animated.Value(0))).current
+  useEffect(() => {
+    Animated.stagger(140, nodeAnims.map(a =>
+      Animated.spring(a, { toValue: 1, damping: 14, stiffness: 200, useNativeDriver: true })
+    )).start()
+  }, [])
+
+  return (
+    <SafeAreaView style={s.safe}>
+      <ScrollView contentContainerStyle={s.inner} showsVerticalScrollIndicator={false}>
+
+        {/* Back */}
+        <TouchableOpacity style={s.backBtn} onPress={onBack} hitSlop={{ top: 12, left: 12, bottom: 12, right: 12 }}>
+          <Ionicons name="chevron-back" size={22} color={c.secondary} />
+        </TouchableOpacity>
+
+        {/* Header */}
+        <View style={s.badge}>
+          <Text style={s.badgeText}>INVITE & EARN</Text>
+        </View>
+        <Text style={s.title}>
+          {'Refer friends.\n'}
+          <Text style={[s.title, { color: AMBER }]}>Earn free months.</Text>
+        </Text>
+        <Text style={s.sub}>
+          For every 2 friends who subscribe to Pro, you get a free month — on us.
+        </Text>
+
+        {/* Reward ladder */}
+        <View style={s.ladder}>
+          <View style={s.ladderLine} />
+          {REFERRAL_LADDER.map((rung, i) => (
+            <View key={i} style={s.rung}>
+              <Animated.View style={[s.node, {
+                opacity: nodeAnims[i],
+                transform: [{ scale: nodeAnims[i].interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }],
+              }]}>
+                <Ionicons name="person" size={18} color="#fff" />
+              </Animated.View>
+              <Text style={s.rungMonths}>{rung.months}</Text>
+              <Text style={s.rungFriend}>{rung.friend}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Locked code card */}
+        {/* TODO(backend): replace the masked placeholder with the user's real referral code once issued. */}
+        <View style={s.codeCard}>
+          <View style={s.codeLeft}>
+            <View style={s.lockCircle}>
+              <Ionicons name="lock-closed" size={16} color={AMBER} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.codeLabel}>Your referral code</Text>
+              <Text style={s.codeValue}>DIALED-•••••</Text>
+            </View>
+          </View>
+          <View style={s.lockedPill}>
+            <Text style={s.lockedPillText}>LOCKED</Text>
+          </View>
+        </View>
+        <Text style={s.codeHint}>Your referral code unlocks the moment you go Pro.</Text>
+
+        {/* CTA */}
+        <View style={s.footer}>
+          <TouchableOpacity style={s.btn} onPress={onNext} activeOpacity={0.85}>
+            <Text style={s.btnText}>Unlock with Pro →</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onDismiss} style={s.dismissRow}>
+            <Text style={s.dismissText}>Maybe later</Text>
+          </TouchableOpacity>
+        </View>
+
+      </ScrollView>
+    </SafeAreaView>
+  )
+}
+
+function referralStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.background },
+    inner: { paddingHorizontal: 22, paddingBottom: 40 },
+    backBtn: { paddingTop: 16, paddingBottom: 8, alignSelf: 'flex-start' },
+
+    badge: {
+      alignSelf: 'flex-start',
+      backgroundColor: AMBER + '18', borderWidth: 1, borderColor: AMBER + '40',
+      borderRadius: Radius.full, paddingHorizontal: 12, paddingVertical: 5, marginBottom: 14,
+    },
+    badgeText: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: AMBER, letterSpacing: 1.6 },
+
+    title: { fontFamily: FontFamily.display, fontSize: 34, color: c.primary, lineHeight: 40 },
+    sub: { fontFamily: FontFamily.sans, fontSize: 15, color: c.secondary, lineHeight: 22, marginTop: 10, marginBottom: 30 },
+
+    // Reward ladder
+    ladder: { flexDirection: 'row', position: 'relative', marginBottom: 30, paddingHorizontal: 4 },
+    ladderLine: { position: 'absolute', top: 21, left: '18%', right: '18%', height: 2, backgroundColor: AMBER + '45', borderRadius: 1 },
+    rung: { flex: 1, alignItems: 'center' },
+    node: {
+      width: 44, height: 44, borderRadius: 22, backgroundColor: AMBER,
+      alignItems: 'center', justifyContent: 'center',
+      shadowColor: AMBER, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6,
+    },
+    rungMonths: { fontFamily: FontFamily.display, fontSize: 15, color: c.primary, marginTop: 10 },
+    rungFriend: { fontFamily: FontFamily.sans, fontSize: 11.5, color: c.tertiary, marginTop: 2 },
+
+    // Locked code card
+    codeCard: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      backgroundColor: c.surface, borderRadius: Radius.card,
+      borderWidth: 1.5, borderColor: AMBER + '30', borderStyle: 'dashed',
+      paddingHorizontal: 16, paddingVertical: 16,
+    },
+    codeLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+    lockCircle: {
+      width: 38, height: 38, borderRadius: 12,
+      backgroundColor: AMBER + '14', borderWidth: 1, borderColor: AMBER + '28',
+      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    },
+    codeLabel: { fontFamily: FontFamily.sans, fontSize: 12, color: c.tertiary },
+    codeValue: { fontFamily: FontFamily.display, fontSize: 18, color: c.secondary, letterSpacing: 2, marginTop: 2 },
+    lockedPill: {
+      backgroundColor: AMBER + '18', borderRadius: Radius.full,
+      paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: AMBER + '30', flexShrink: 0,
+    },
+    lockedPillText: { fontFamily: FontFamily.sansMedium, fontSize: 10, color: AMBER, letterSpacing: 1 },
+
+    codeHint: { fontFamily: FontFamily.sans, fontSize: 12.5, color: c.tertiary, lineHeight: 18, marginTop: 12, marginBottom: 26, textAlign: 'center' },
+
+    // CTA
+    footer: { gap: 12 },
+    btn: { backgroundColor: c.primary, borderRadius: Radius.full, paddingVertical: 17, alignItems: 'center' },
+    btnText: { fontFamily: FontFamily.display, fontSize: 17, color: c.background },
+    dismissRow: { alignItems: 'center', paddingVertical: 4 },
+    dismissText: { fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary },
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Redeem  (were YOU referred? enter a friend's code — shown before the paywall)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function RedeemView({ c, onNext, onSkip, onBack }: {
+  c: ColorPalette
+  onNext: () => void
+  onSkip: () => void
+  onBack: () => void
+}) {
+  const s = redeemStyles(c)
+  const [code, setCode] = useState('')
+  const [applied, setApplied] = useState(false)
+  const hasCode = code.trim().length > 0
+
+  // UI only: applying a code just shows the confirmed state. Real validation/crediting is backend (later).
+  function apply() {
+    if (!hasCode) return
+    haptic.success()
+    setApplied(true)
+  }
+
+  return (
+    <SafeAreaView style={s.safe}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={s.inner} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+          {/* Back */}
+          <TouchableOpacity style={s.backBtn} onPress={onBack} hitSlop={{ top: 12, left: 12, bottom: 12, right: 12 }}>
+            <Ionicons name="chevron-back" size={22} color={c.secondary} />
+          </TouchableOpacity>
+
+          {/* Header */}
+          <View style={s.badge}>
+            <Text style={s.badgeText}>REFERRED BY A FRIEND?</Text>
+          </View>
+          <Text style={s.title}>Have a referral{'\n'}code?</Text>
+          <Text style={s.sub}>
+            Enter a friend's code so they get credit toward their free month. No code? Just skip ahead.
+          </Text>
+
+          {/* Input → applied state */}
+          {applied ? (
+            <View style={s.appliedCard}>
+              <Ionicons name="checkmark-circle" size={22} color={c.success} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.appliedTitle}>Code applied</Text>
+                <Text style={s.appliedSub}>{code.trim()} — your friend gets credit when you go Pro.</Text>
+              </View>
+              <TouchableOpacity onPress={() => { setApplied(false); setCode('') }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={18} color={c.tertiary} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={s.inputWrap}>
+              <Ionicons name="pricetag-outline" size={18} color={c.tertiary} />
+              <TextInput
+                style={s.input}
+                value={code}
+                onChangeText={t => setCode(t.toUpperCase())}
+                placeholder="DIALED-XXXXX"
+                placeholderTextColor={c.tertiary}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                returnKeyType="done"
+                onSubmitEditing={apply}
+              />
+            </View>
+          )}
+
+          {/* CTA */}
+          <View style={s.footer}>
+            {applied ? (
+              <TouchableOpacity style={s.btn} onPress={onNext} activeOpacity={0.85}>
+                <Text style={s.btnText}>Continue →</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <TouchableOpacity style={[s.btn, !hasCode && s.btnDisabled]} onPress={apply} disabled={!hasCode} activeOpacity={0.85}>
+                  <Text style={s.btnText}>Apply code</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={onSkip} style={s.dismissRow}>
+                  <Text style={s.dismissText}>I wasn't referred</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  )
+}
+
+function redeemStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.background },
+    inner: { paddingHorizontal: 22, paddingBottom: 40 },
+    backBtn: { paddingTop: 16, paddingBottom: 8, alignSelf: 'flex-start' },
+
+    badge: {
+      alignSelf: 'flex-start',
+      backgroundColor: AMBER + '18', borderWidth: 1, borderColor: AMBER + '40',
+      borderRadius: Radius.full, paddingHorizontal: 12, paddingVertical: 5, marginBottom: 14,
+    },
+    badgeText: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: AMBER, letterSpacing: 1.6 },
+
+    title: { fontFamily: FontFamily.display, fontSize: 34, color: c.primary, lineHeight: 40 },
+    sub: { fontFamily: FontFamily.sans, fontSize: 15, color: c.secondary, lineHeight: 22, marginTop: 10, marginBottom: 26 },
+
+    inputWrap: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      backgroundColor: c.surface, borderRadius: Radius.card,
+      borderWidth: 1.5, borderColor: c.subtleBorder,
+      paddingHorizontal: 16, marginBottom: 28,
+    },
+    input: {
+      flex: 1, fontFamily: FontFamily.display, fontSize: 18, color: c.primary,
+      letterSpacing: 1.5, paddingVertical: 16,
+    },
+
+    appliedCard: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      backgroundColor: c.success + '12', borderRadius: Radius.card,
+      borderWidth: 1, borderColor: c.success + '30',
+      paddingHorizontal: 14, paddingVertical: 14, marginBottom: 28,
+    },
+    appliedTitle: { fontFamily: FontFamily.sansMedium, fontSize: 15, color: c.primary },
+    appliedSub: { fontFamily: FontFamily.sans, fontSize: 12.5, color: c.secondary, lineHeight: 17, marginTop: 2 },
+
+    footer: { gap: 12 },
+    btn: { backgroundColor: c.primary, borderRadius: Radius.full, paddingVertical: 17, alignItems: 'center' },
+    btnDisabled: { opacity: 0.35 },
     btnText: { fontFamily: FontFamily.display, fontSize: 17, color: c.background },
     dismissRow: { alignItems: 'center', paddingVertical: 4 },
     dismissText: { fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary },
@@ -721,7 +1021,29 @@ export default function UpgradeScreen() {
   }
 
   if (view === 'features') {
-    return <FeaturesView c={c} onNext={() => setView('trial')} onDismiss={hardDismiss} />
+    return <FeaturesView c={c} onNext={() => setView('referral')} onDismiss={hardDismiss} />
+  }
+
+  if (view === 'referral') {
+    return (
+      <ReferralView
+        c={c}
+        onNext={() => setView('redeem')}
+        onBack={() => setView('features')}
+        onDismiss={hardDismiss}
+      />
+    )
+  }
+
+  if (view === 'redeem') {
+    return (
+      <RedeemView
+        c={c}
+        onNext={() => setView('trial')}
+        onSkip={() => setView('trial')}
+        onBack={() => setView('referral')}
+      />
+    )
   }
 
   if (view === 'trial') {
@@ -732,7 +1054,7 @@ export default function UpgradeScreen() {
         setPlan={setPlan}
         onUpgrade={handleUpgrade}
         onRestore={handleRestore}
-        onBack={() => setView('features')}
+        onBack={() => setView('redeem')}
         onMaybeLater={() => setView('downsell')}
       />
     )

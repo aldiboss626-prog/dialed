@@ -119,7 +119,7 @@ export interface PendingResponse {
   notification_count: number
   status: 'pending' | 'responded' | 'dismissed'
   created_at: string
-  contact: { id: number; name: string; stars: number; role: string | null; relationship_type?: string | null }
+  contact: { id: number; name: string; stars: number; role: string | null; relationship_type?: string | null; email?: string | null }
   email_subject: string
   email_date: string
   email_preview: string | null

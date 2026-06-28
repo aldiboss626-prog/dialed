@@ -1,15 +1,25 @@
+# dependencies
 node_modules/
-client/node_modules/
-server/node_modules/
-client/dist/
-server/data/
-.env
-server/.env
-client/.env
-.DS_Store
-*.log
-*.tsbuildinfo
 
-# Local utility scripts that contain the Supabase service-role key — never commit
-seed-demo.js
-setup-supabase.js
+# secrets — NEVER commit these. Hand-carry them to a new device (see HANDOFF.md).
+.env
+.env.*
+**/.env
+**/.env.*
+
+# build output
+client/dist/
+dist/
+
+# secret-bearing demo seeder (contains the Supabase SERVICE-ROLE key) — hand-carry, do not push
+lose stuff/
+
+# Claude Code local machine settings (not portable)
+.claude/settings.local.json
+.claude/._settings.local.json
+.claude/.codex/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.log

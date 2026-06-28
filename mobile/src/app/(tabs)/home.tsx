@@ -17,10 +17,15 @@ import { TITLE_PREF_KEY } from '@/app/settings'
 import { FontFamily } from '@/constants/theme'
 import { useColors, useThemeMode } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
-import { AddContactModal } from '@/components/AddContactModal'
+import { AddPane } from '@/components/AddPane'
+import { SearchPane } from '@/components/SearchPane'
 import { DialWordmark } from '@/components/DialWordmark'
+import { Bob } from '@/components/Bob'
+import { loadReminderHours, reminderShortLabel, urgencyTint, DEFAULT_REMINDER_HOURS } from '@/lib/inboxPrefs'
 import { useAuth } from '@/hooks/useAuth'
 import { ContactAvatar } from '@/components/ContactAvatar'
+import { PressableScale } from '@/components/PressableScale'
+import { haptic } from '@/lib/haptics'
 import type { Contact, Opportunity, PendingResponse, Notification } from '@/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -58,11 +63,6 @@ function pendingTimeLabel(h: number) {
   return `${Math.floor(h / 24)}d`
 }
 
-function pendingTimeTint(c: ColorPalette, h: number) {
-  if (h < 6) return c.secondary
-  if (h < 24) return c.warning
-  return c.overdue
-}
 
 function networkScore(contacts: Contact[]) {
   const overdue = contacts.filter(c => c.status === 'overdue').length
@@ -185,7 +185,7 @@ function HealthHeroCard({ score, contacts, pendingCount, onPendingPress }: {
     const parts: string[] = []
     if (overdue > 0) parts.push(`${overdue} cooling off`)
     if (dueSoon > 0) parts.push(`${dueSoon} due soon`)
-    headline = `${attn} need${attn === 1 ? 's' : ''} you`
+    headline = 'Need you this week'
     subline = parts.join(', ') + '.'
   }
 
@@ -201,10 +201,10 @@ function HealthHeroCard({ score, contacts, pendingCount, onPendingPress }: {
           letterSpacing: 1, textTransform: 'uppercase',
           color: 'rgba(255,255,255,0.45)', marginBottom: 8,
         }}>
-          Network health
+          This week
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <DialGauge score={score} />
+          <Bob score={score} size={84} />
           <View style={{ flex: 1, paddingLeft: 10 }}>
             <Text style={{ fontFamily: FontFamily.display, fontSize: 22, color: '#FFFFFF', lineHeight: 28 }}>
               {headline}
@@ -254,7 +254,7 @@ function FavoritesRow({ contacts, onPress }: { contacts: Contact[]; onPress: (id
           const tc = typeColor(ct.relationship_type)
           const badgeColor = ct.status === 'overdue' ? c.overdue : ct.status === 'due-soon' ? c.warning : null
           return (
-            <TouchableOpacity key={ct.id} onPress={() => onPress(ct.id)} activeOpacity={0.75}
+            <PressableScale key={ct.id} onPress={() => onPress(ct.id)}
               style={{ alignItems: 'center', gap: 7, width: 60 }}>
               <View style={{ position: 'relative' }}>
                 <ContactAvatar name={ct.name} avatarUrl={ct.avatar_url} size={52} borderRadius={26} bgColor={tc} />
@@ -269,7 +269,7 @@ function FavoritesRow({ contacts, onPress }: { contacts: Contact[]; onPress: (id
               <Text style={{ fontFamily: FontFamily.sans, fontSize: 11.5, color: c.secondary, textAlign: 'center' }} numberOfLines={1}>
                 {ct.name.split(' ')[0]}
               </Text>
-            </TouchableOpacity>
+            </PressableScale>
           )
         })}
       </ScrollView>
@@ -294,7 +294,7 @@ function AttentionCard({ contact, onPress, onTalked, onDraft }: {
   async function handleTalked() {
     if (talking || talked) return
     setTalking(true)
-    try { await onTalked(contact.id); setTalked(true) } catch {} finally { setTalking(false) }
+    try { await onTalked(contact.id); setTalked(true); haptic.success() } catch {} finally { setTalking(false) }
   }
 
   return (
@@ -340,8 +340,8 @@ function AttentionCard({ contact, onPress, onTalked, onDraft }: {
         flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 14,
         borderTopWidth: 1, borderTopColor: c.subtleBorder, paddingTop: 12,
       }}>
-        <TouchableOpacity
-          onPress={() => onDraft(contact.id)} activeOpacity={0.7}
+        <PressableScale
+          onPress={() => onDraft(contact.id)}
           style={{
             flex: 1, height: 40, borderRadius: 10,
             borderWidth: 1.5, borderColor: c.border,
@@ -350,9 +350,9 @@ function AttentionCard({ contact, onPress, onTalked, onDraft }: {
         >
           <Ionicons name="add" size={16} color={c.gold} />
           <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 13.5, color: c.gold }}>Draft a note</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={handleTalked} disabled={talking || talked} activeOpacity={0.8}
+        </PressableScale>
+        <PressableScale
+          onPress={handleTalked} disabled={talking || talked}
           style={{
             flex: 1, height: 40, borderRadius: 10,
             backgroundColor: talked ? c.success : c.gold,
@@ -368,7 +368,7 @@ function AttentionCard({ contact, onPress, onTalked, onDraft }: {
               </Text>
             </>
           }
-        </TouchableOpacity>
+        </PressableScale>
       </View>
     </View>
   )
@@ -418,12 +418,13 @@ function OnTrackSection({ contacts, onPress, onViewAll }: {
 
 // ── InboxView ─────────────────────────────────────────────────────────────────
 
-function InboxView({ pending, onOpen, onDismiss, onReplied, bottomPad }: {
+function InboxView({ pending, onOpen, onDismiss, onReplied, bottomPad, reminderHours }: {
   pending: PendingResponse[]
   onOpen: (pr: PendingResponse) => void
   onDismiss: (id: number) => Promise<void>
   onReplied: (id: number) => Promise<void>
   bottomPad: number
+  reminderHours: number
 }) {
   const c = useColors()
   const [acting, setActing] = useState<Record<number, 'dismiss' | 'replied' | null>>({})
@@ -432,7 +433,7 @@ function InboxView({ pending, onOpen, onDismiss, onReplied, bottomPad }: {
     setActing(prev => ({ ...prev, [prId]: type }))
     try {
       if (type === 'dismiss') await onDismiss(prId)
-      else await onReplied(prId)
+      else { await onReplied(prId); haptic.success() }
     } finally {
       setActing(prev => ({ ...prev, [prId]: null }))
     }
@@ -460,7 +461,7 @@ function InboxView({ pending, onOpen, onDismiss, onReplied, bottomPad }: {
     >
       {pending.map(pr => {
         const h = hoursAgo(pr.email_date ?? pr.detected_at)
-        const urgencyColor = pendingTimeTint(c, h)
+        const urgencyColor = urgencyTint(c, h, reminderHours)
         const isActing = acting[pr.id]
 
         return (
@@ -547,11 +548,9 @@ function InboxView({ pending, onOpen, onDismiss, onReplied, bottomPad }: {
 
 // ── PillTabBar ────────────────────────────────────────────────────────────────
 
-function PillTabBar({ tab, onTab, onAdd, onSearch, pendingCount, slideAnim }: {
-  tab: 'network' | 'inbox'
-  onTab: (t: 'network' | 'inbox') => void
-  onAdd: () => void
-  onSearch: () => void
+function PillTabBar({ tab, onTab, pendingCount, slideAnim }: {
+  tab: 'network' | 'inbox' | 'add' | 'search'
+  onTab: (t: 'network' | 'inbox' | 'add' | 'search') => void
   pendingCount: number
   slideAnim: Animated.Value
 }) {
@@ -568,13 +567,13 @@ function PillTabBar({ tab, onTab, onAdd, onSearch, pendingCount, slideAnim }: {
     { id: 'search',  label: 'Search',  icon: 'search' as const,       iconOut: 'search-outline' as const },
   ]
 
-  // Tab width = pillW / 4. Indicator slides between tab 0 (Network) and tab 1 (Inbox).
+  // Tab width = pillW / 4. Indicator slides across all four section tabs.
   const tabW = pillW / 4
   const indicatorW = 28
 
   const indicatorX = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [tabW / 2 - indicatorW / 2, tabW * 1.5 - indicatorW / 2],
+    inputRange: [0, 1, 2, 3],
+    outputRange: [tabW * 0.5 - indicatorW / 2, tabW * 1.5 - indicatorW / 2, tabW * 2.5 - indicatorW / 2, tabW * 3.5 - indicatorW / 2],
   })
 
   return (
@@ -619,21 +618,17 @@ function PillTabBar({ tab, onTab, onAdd, onSearch, pendingCount, slideAnim }: {
 
         <View style={{ flexDirection: 'row' }}>
           {items.map(item => {
-            const isNavTab = item.id === 'network' || item.id === 'inbox'
-            const active = isNavTab && tab === item.id
+            const active = tab === item.id
             const color = active ? c.gold : isDark ? c.secondary : c.tertiary
 
             function handlePress() {
-              if (item.id === 'network' || item.id === 'inbox') onTab(item.id)
-              else if (item.id === 'add') onAdd()
-              else if (item.id === 'search') onSearch()
+              onTab(item.id as 'network' | 'inbox' | 'add' | 'search')
             }
 
             return (
-              <TouchableOpacity
+              <PressableScale
                 key={item.id}
                 onPress={handlePress}
-                activeOpacity={0.65}
                 style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 5 }}
               >
                 {/* Icon with glow halo on active */}
@@ -674,7 +669,7 @@ function PillTabBar({ tab, onTab, onAdd, onSearch, pendingCount, slideAnim }: {
                 <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 10.5, color, letterSpacing: 0.1 }}>
                   {item.label}
                 </Text>
-              </TouchableOpacity>
+              </PressableScale>
             )
           })}
         </View>
@@ -688,46 +683,98 @@ function PillTabBar({ tab, onTab, onAdd, onSearch, pendingCount, slideAnim }: {
 export default function HomeScreen() {
   const { user } = useAuth()
   const router = useRouter()
-  const { welcome } = useLocalSearchParams<{ welcome?: string }>()
+  const { welcome, tab: tabParam } = useLocalSearchParams<{ welcome?: string; tab?: string }>()
   const c = useColors()
   const insets = useSafeAreaInsets()
   const { width: screenW } = useWindowDimensions()
   const slideAnim = useRef(new Animated.Value(0)).current
-  const tabRef = useRef<'network' | 'inbox'>('network')
-  const switchTabFn = useRef<(t: 'network' | 'inbox') => void>(() => {})
+  const tabRef = useRef<'network' | 'inbox' | 'add' | 'search'>('network')
+  const switchTabFn = useRef<(t: 'network' | 'inbox' | 'add' | 'search') => void>(() => {})
+  // Live-drag plumbing for finger-tracking pane swipe.
+  const gestureBaseRef = useRef(0)   // slideAnim value when the drag began
+  const dragPosRef = useRef(0)       // latest slideAnim value during the drag
+  const slidePosRef = useRef(0)      // live mirror of slideAnim, so an interrupted swipe continues from here
+  const screenWRef = useRef(screenW) // kept fresh so the gesture closure isn't stale
+  screenWRef.current = screenW
+  const settleToRef = useRef<(target: 0 | 1 | 2 | 3, velocity?: number) => void>(() => {})
   const [contacts, setContacts] = useState<Contact[]>([])
   const [opps, setOpps] = useState<Opportunity[]>([])
   const [pending, setPending] = useState<PendingResponse[]>([])
+  const [reminderHours, setReminderHours] = useState(DEFAULT_REMINDER_HOURS)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
   const [showWelcome, setShowWelcome] = useState(welcome === '1')
   const [titlePref, setTitlePref] = useState('')
-  const [tab, setTab] = useState<'network' | 'inbox'>('network')
+  const [tab, setTab] = useState<'network' | 'inbox' | 'add' | 'search'>('network')
 
-  function switchTab(newTab: 'network' | 'inbox') {
-    if (tabRef.current === newTab) return
+  const TABS = ['network', 'inbox', 'add', 'search'] as const
+
+  // Spring the panes to a snap point, handing off the gesture's momentum so the
+  // motion continues rather than restarting from zero.
+  function settleTo(target: 0 | 1 | 2 | 3, velocity = 0) {
+    const newTab = TABS[target]
+    if (tabRef.current !== newTab) haptic.selection() // tick only on a real change, not a snap-back
     tabRef.current = newTab
     setTab(newTab)
     Animated.spring(slideAnim, {
-      toValue: newTab === 'inbox' ? 1 : 0,
+      toValue: target,
+      velocity,
       useNativeDriver: true,
-      tension: 80,
-      friction: 13,
+      tension: 90,
+      friction: 14,
     }).start()
+  }
+  settleToRef.current = settleTo
+
+  function switchTab(newTab: 'network' | 'inbox' | 'add' | 'search') {
+    if (tabRef.current === newTab) return
+    settleTo(TABS.indexOf(newTab) as 0 | 1 | 2 | 3)
   }
   switchTabFn.current = switchTab
 
+  // When navigated here with ?tab= (e.g. from a deep link), open that pane.
+  useEffect(() => {
+    if (tabParam === 'inbox' || tabParam === 'network' || tabParam === 'add' || tabParam === 'search') {
+      switchTabFn.current(tabParam)
+      router.setParams({ tab: undefined } as any)
+    }
+  }, [tabParam, router])
+
   const contentPan = useRef(
     PanResponder.create({
+      // Only claim the gesture for clearly-horizontal intent, so vertical
+      // scrolling inside each pane keeps working.
       onMoveShouldSetPanResponder: (_, gs) =>
         Math.abs(gs.dx) > Math.abs(gs.dy) * 2.5 && Math.abs(gs.dx) > 10,
+      onPanResponderGrant: () => {
+        slideAnim.stopAnimation()
+        // Continue from the live position so grabbing mid-settle feels seamless.
+        gestureBaseRef.current = slidePosRef.current
+        dragPosRef.current = gestureBaseRef.current
+      },
+      onPanResponderMove: (_, gs) => {
+        const w = screenWRef.current || 1
+        let pos = gestureBaseRef.current - gs.dx / w
+        // Resist past the edges — a soft rubber band instead of a hard wall.
+        if (pos < 0) pos *= 0.35
+        else if (pos > 3) pos = 3 + (pos - 3) * 0.35
+        dragPosRef.current = pos
+        slideAnim.setValue(pos)
+      },
       onPanResponderRelease: (_, gs) => {
-        if ((gs.dx < -50 || gs.vx < -0.4) && tabRef.current === 'network')
-          switchTabFn.current('inbox')
-        else if ((gs.dx > 50 || gs.vx > 0.4) && tabRef.current === 'inbox')
-          switchTabFn.current('network')
+        const w = screenWRef.current || 1
+        const vx = gs.vx // px/ms; negative = swiping forward
+        const pos = dragPosRef.current
+        let target: number
+        if (vx < -0.3) target = Math.floor(pos) + 1       // flick forward → next pane
+        else if (vx > 0.3) target = Math.ceil(pos) - 1    // flick back → previous pane
+        else target = Math.round(pos)                     // settle to nearest
+        target = Math.max(0, Math.min(3, target))
+        settleToRef.current(target as 0 | 1 | 2 | 3, (-vx * 1000) / w)
+      },
+      onPanResponderTerminate: () => {
+        settleToRef.current(Math.max(0, Math.min(3, Math.round(dragPosRef.current))) as 0 | 1 | 2 | 3)
       },
     })
   ).current
@@ -738,6 +785,13 @@ export default function HomeScreen() {
   useEffect(() => {
     AsyncStorage.getItem(TITLE_PREF_KEY).then(v => setTitlePref(v ?? '')).catch(() => {})
   }, [])
+
+  // Mirror the animated slide value to a ref so the swipe gesture can pick up
+  // exactly where an in-flight spring left off (interruptible swipes).
+  useEffect(() => {
+    const id = slideAnim.addListener(({ value }) => { slidePosRef.current = value })
+    return () => slideAnim.removeListener(id)
+  }, [slideAnim])
 
   const loadData = useCallback(async () => {
     try {
@@ -752,7 +806,7 @@ export default function HomeScreen() {
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
-  useFocusEffect(useCallback(() => { loadData() }, [loadData]))
+  useFocusEffect(useCallback(() => { loadData(); loadReminderHours().then(setReminderHours) }, [loadData]))
   function onRefresh() { setRefreshing(true); loadData() }
 
   async function handleTalked(id: number) {
@@ -774,6 +828,7 @@ export default function HomeScreen() {
         contactId: String(pr.contact_id),
         contactName: pr.contact.name,
         contactRole: pr.contact.role ?? '',
+        email: pr.contact.email ?? '',
         relationship: pr.contact.relationship_type ?? '',
         subject: pr.email_subject,
         preview: pr.email_preview ?? '',
@@ -821,7 +876,7 @@ export default function HomeScreen() {
       }}>
         <DialWordmark />
         <TouchableOpacity
-          onPress={() => router.push('/settings' as any)}
+          onPress={() => router.push('/profile' as any)}
           activeOpacity={0.7}
           style={{
             width: 36, height: 36, borderRadius: 18,
@@ -835,16 +890,16 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Content — two panes side by side, animated slide + swipe gesture */}
+      {/* Content — four panes side by side (Network · Inbox · Add · Search) */}
       <View style={{ flex: 1, overflow: 'hidden' }} {...contentPan.panHandlers}>
         <Animated.View style={{
           flexDirection: 'row',
-          width: screenW * 2,
+          width: screenW * 4,
           flex: 1,
           transform: [{
             translateX: slideAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, -screenW],
+              inputRange: [0, 1, 2, 3],
+              outputRange: [0, -screenW, -screenW * 2, -screenW * 3],
             }),
           }],
         }}>
@@ -860,7 +915,7 @@ export default function HomeScreen() {
             score={score}
             contacts={contacts}
             pendingCount={pending.length}
-            onPendingPress={() => setTab('inbox')}
+            onPendingPress={() => switchTab('inbox')}
           />
 
           <FavoritesRow contacts={contacts} onPress={id => router.push(`/contact/${id}` as any)} />
@@ -910,14 +965,14 @@ export default function HomeScreen() {
             <OnTrackSection
               contacts={contacts}
               onPress={id => router.push(`/contact/${id}` as any)}
-              onViewAll={() => router.push('/people' as any)}
+              onViewAll={() => switchTab('search')}
             />
           )}
 
           {/* Empty state */}
           {!loading && contacts.length === 0 && (
             <TouchableOpacity
-              onPress={() => setAddOpen(true)} activeOpacity={0.75}
+              onPress={() => switchTab('add')} activeOpacity={0.75}
               style={{ backgroundColor: c.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: c.subtleBorder, alignItems: 'center', gap: 10 }}
             >
               <Ionicons name="person-add-outline" size={28} color={c.gold} />
@@ -931,12 +986,58 @@ export default function HomeScreen() {
           </View>{/* end network pane */}
 
           {/* ── Inbox pane ── */}
-          <View style={{ width: screenW }}>
+          <View style={{ width: screenW, flex: 1 }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingHorizontal: 18, paddingTop: 2, paddingBottom: 10,
+            }}>
+              <Text style={{
+                fontFamily: FontFamily.sansMedium, fontSize: 11, letterSpacing: 0.9,
+                textTransform: 'uppercase', color: c.secondary,
+              }}>
+                {pending.length > 0 ? `${pending.length} waiting` : 'Inbox'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => router.push('/inbox-settings' as any)}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 5,
+                  paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999,
+                  borderWidth: 1, borderColor: c.border, backgroundColor: c.surface,
+                }}
+              >
+                <Ionicons name="time-outline" size={14} color={c.gold} />
+                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 12.5, color: c.primary }}>
+                  Reply within {reminderShortLabel(reminderHours)}
+                </Text>
+                <Ionicons name="chevron-forward" size={13} color={c.tertiary} />
+              </TouchableOpacity>
+            </View>
             <InboxView
               pending={pending}
               onOpen={handleOpenReply}
               onDismiss={handleDismiss}
               onReplied={handleReplied}
+              bottomPad={bottomPad}
+              reminderHours={reminderHours}
+            />
+          </View>
+
+          {/* ── Add pane ── */}
+          <View style={{ width: screenW, flex: 1 }}>
+            <AddPane
+              bottomPad={bottomPad}
+              onAdded={contact => setContacts(prev => [contact, ...prev])}
+              onDone={() => switchTab('network')}
+            />
+          </View>
+
+          {/* ── Search pane ── */}
+          <View style={{ width: screenW, flex: 1 }}>
+            <SearchPane
+              contacts={contacts}
+              onOpen={id => router.push(`/contact/${id}` as any)}
+              onAdd={() => switchTab('add')}
               bottomPad={bottomPad}
             />
           </View>
@@ -947,16 +1048,8 @@ export default function HomeScreen() {
       <PillTabBar
         tab={tab}
         onTab={switchTab}
-        onAdd={() => setAddOpen(true)}
-        onSearch={() => router.push('/search' as any)}
         pendingCount={pending.length}
         slideAnim={slideAnim}
-      />
-
-      <AddContactModal
-        visible={addOpen}
-        onClose={() => setAddOpen(false)}
-        onAdded={contact => setContacts(prev => [contact, ...prev])}
       />
 
       {showWelcome && user && (

@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useColors } from '@/hooks/use-theme'
 import type { ColorPalette } from '@/hooks/use-theme'
 import { FontFamily, Radius, Spacing } from '@/constants/theme'
+import { Bob } from '@/components/Bob'
 
 export const ONBOARDED_KEY = 'dialed_onboarded'
 const PROFILE_KEY = 'dialed_onboarding_profile'
@@ -28,7 +29,7 @@ const PROFILE_KEY = 'dialed_onboarding_profile'
 // 7   social proof
 // 8   loading           (auto-advances → 9)
 // 9   trust slide       (thank you graphic)
-// 10  results           (animated chart)
+// 10  cold realization   (reflection question — makes them feel the silence)
 // 11  save progress     (account creation)
 
 const TOTAL_PROGRESS_STEPS = 11 // steps 0–10 show the bar
@@ -91,8 +92,6 @@ const LOADING_ITEMS = [
   'Identifying who\'s going cold',
   'Building your outreach cadence',
 ]
-
-const HEALTH_BARS = [28, 42, 55, 68, 80, 93]
 
 // ── Social proof slide ────────────────────────────────────────────────────────
 
@@ -559,6 +558,19 @@ function recogStyles(c: ColorPalette) {
 // ── Consequence slide ─────────────────────────────────────────────────────────
 
 function ConsequenceSlide({ c, onNext }: { c: ColorPalette; onNext: () => void }) {
+  // Bob visibly decays from thriving to dead — the user watches their network die.
+  const [bobScore, setBobScore] = useState(95)
+  useEffect(() => {
+    const steps = [95, 68, 42, 20, 5]
+    let i = 0
+    const id = setInterval(() => {
+      i += 1
+      if (i < steps.length) setBobScore(steps[i])
+      else clearInterval(id)
+    }, 650)
+    return () => clearInterval(id)
+  }, [])
+
   const cardAnims = useRef(CONSEQUENCES.map(() => ({
     opacity: new Animated.Value(0),
     translateY: new Animated.Value(24),
@@ -583,31 +595,39 @@ function ConsequenceSlide({ c, onNext }: { c: ColorPalette; onNext: () => void }
   const s = consequenceStyles(c)
   return (
     <View style={s.wrap}>
-      <View style={s.header}>
-        <Text style={s.title}>This is what{'\n'}silence costs you.</Text>
-        <Text style={s.subtitle}>Every week you don't reach out, this is playing out in real time.</Text>
-      </View>
-      <View style={s.cards}>
-        {CONSEQUENCES.map((item, i) => (
-          <Animated.View
-            key={i}
-            style={[
-              s.card,
-              { backgroundColor: item.bg },
-              { opacity: cardAnims[i].opacity, transform: [{ translateY: cardAnims[i].translateY }] },
-            ]}
-          >
-            <View style={[s.iconBox, { backgroundColor: item.color + '18', borderColor: item.color + '30' }]}>
-              <Ionicons name={item.icon} size={20} color={item.color} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.cardTitle, { color: item.color }]}>{item.title}</Text>
-              <Text style={s.cardBody}>{item.body}</Text>
-            </View>
-          </Animated.View>
-        ))}
-      </View>
-      <Animated.View style={{ opacity: btnAnim.opacity, transform: [{ translateY: btnAnim.translateY }] }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 14 }}>
+        <View style={s.header}>
+          <View style={{ alignItems: 'center', marginBottom: 4 }}>
+            <Bob score={bobScore} size={112} />
+            <Text style={s.bobCaption}>
+              {bobScore > 50 ? 'Your network today' : bobScore > 12 ? 'slipping away…' : 'gone cold.'}
+            </Text>
+          </View>
+          <Text style={s.title}>This is what{'\n'}silence costs you.</Text>
+          <Text style={s.subtitle}>Stop showing up and your network quietly dies. Every week you stay silent, this is playing out for real.</Text>
+        </View>
+        <View style={s.cards}>
+          {CONSEQUENCES.map((item, i) => (
+            <Animated.View
+              key={i}
+              style={[
+                s.card,
+                { backgroundColor: item.bg },
+                { opacity: cardAnims[i].opacity, transform: [{ translateY: cardAnims[i].translateY }] },
+              ]}
+            >
+              <View style={[s.iconBox, { backgroundColor: item.color + '18', borderColor: item.color + '30' }]}>
+                <Ionicons name={item.icon} size={20} color={item.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.cardTitle, { color: item.color }]}>{item.title}</Text>
+                <Text style={s.cardBody}>{item.body}</Text>
+              </View>
+            </Animated.View>
+          ))}
+        </View>
+      </ScrollView>
+      <Animated.View style={{ opacity: btnAnim.opacity, transform: [{ translateY: btnAnim.translateY }], paddingTop: 12 }}>
         <TouchableOpacity style={s.btn} onPress={onNext} activeOpacity={0.85}>
           <Text style={s.btnText}>Show me the solution</Text>
         </TouchableOpacity>
@@ -620,13 +640,13 @@ function consequenceStyles(c: ColorPalette) {
   return StyleSheet.create({
     wrap: {
       flex: 1, paddingHorizontal: 24,
-      paddingTop: 20, paddingBottom: 24,
-      justifyContent: 'space-between',
+      paddingTop: 8, paddingBottom: 24,
     },
-    header: { gap: 8 },
-    title: { fontFamily: FontFamily.display, fontSize: 34, color: c.primary, lineHeight: 40 },
-    subtitle: { fontFamily: FontFamily.sans, fontSize: 14, color: c.secondary, lineHeight: 21 },
-    cards: { gap: 10, flex: 1, justifyContent: 'center', marginVertical: 16 },
+    header: { gap: 6 },
+    bobCaption: { fontFamily: FontFamily.sansMedium, fontSize: 12.5, color: c.overdue, marginTop: 4, letterSpacing: 0.3 },
+    title: { fontFamily: FontFamily.display, fontSize: 30, color: c.primary, lineHeight: 36 },
+    subtitle: { fontFamily: FontFamily.sans, fontSize: 13.5, color: c.secondary, lineHeight: 20 },
+    cards: { gap: 9, marginTop: 16 },
     card: {
       flexDirection: 'row', alignItems: 'flex-start', gap: 12,
       borderRadius: Radius.card, borderWidth: 1, borderColor: c.subtleBorder, padding: 14,
@@ -748,40 +768,157 @@ function trustStyles(c: ColorPalette) {
   })
 }
 
-// ── Animated health chart ─────────────────────────────────────────────────────
+// ── Cold-realization slide ────────────────────────────────────────────────────
+// Replaces the old fabricated "8 relationships are going cold" stat. Instead of
+// asserting a number, it makes the user picture a real person and admit how long
+// it's been — so they realize the silence themselves.
 
-function HealthChart({ c }: { c: ColorPalette }) {
-  const barAnims = useRef(HEALTH_BARS.map(() => new Animated.Value(0))).current
+const REACH_OPTIONS: { value: string; label: string; cold: boolean }[] = [
+  { value: 'week',  label: 'This week',             cold: false },
+  { value: 'month', label: 'This month',            cold: false },
+  { value: 'few',   label: 'A few months ago',      cold: true  },
+  { value: 'never', label: "I can't even remember", cold: true  },
+]
 
-  useEffect(() => {
-    Animated.stagger(110, HEALTH_BARS.map((val, i) =>
-      Animated.timing(barAnims[i], {
-        toValue: (val / 100) * 70,
-        duration: 480,
-        useNativeDriver: false, // height animation requires JS driver
-      })
-    )).start()
-  }, [])
+const REACH_RESPONSE: Record<string, string> = {
+  week:  'Nice. Now imagine keeping that up with everyone who matters — without trying.',
+  month: 'It slips faster than you think. One quiet month quietly becomes six.',
+  few:   "That's how it happens. Not a falling-out — just silence. They're already drifting.",
+  never: "That's the gap. Someone who could've opened a door has already gone cold.",
+}
+
+function ColdRealizationSlide({ c, onNext }: { c: ColorPalette; onNext: () => void }) {
+  const [picked, setPicked] = useState<string | null>(null)
+  const revealAnim = useRef(new Animated.Value(0)).current
+
+  function pick(v: string) {
+    setPicked(v)
+    revealAnim.setValue(0)
+    Animated.spring(revealAnim, { toValue: 1, damping: 18, stiffness: 200, useNativeDriver: true }).start()
+  }
+
+  const chosen = picked ? REACH_OPTIONS.find(o => o.value === picked)! : null
+  const s = coldStyles(c)
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 84, gap: 5, paddingHorizontal: 4 }}>
-      {HEALTH_BARS.map((_, i) => {
-        const color = i < 2 ? c.overdue : i < 4 ? c.warning : c.success
-        return (
-          <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
-            <Animated.View
-              style={{
-                width: '100%',
-                height: barAnims[i],
-                backgroundColor: color,
-                borderRadius: 5,
-                opacity: 0.88,
-              }}
-            />
-            <Text style={{ fontSize: 9, color: c.tertiary, fontFamily: FontFamily.sans }}>{`M${i + 1}`}</Text>
-          </View>
-        )
-      })}
+    <View style={s.wrap}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 14 }}>
+        <View style={s.badge}><Text style={s.badgeText}>REALITY CHECK</Text></View>
+        <Text style={s.title}>Picture one person{'\n'}who matters.</Text>
+        <Text style={s.sub}>A mentor, a recruiter, a friend who had your back. When did you last actually reach out to them?</Text>
+
+        <View style={s.options}>
+          {REACH_OPTIONS.map(opt => {
+            const active = picked === opt.value
+            return (
+              <TouchableOpacity key={opt.value} style={[s.option, active && s.optionActive]} onPress={() => pick(opt.value)} activeOpacity={0.75}>
+                <Text style={[s.optionText, active && s.optionTextActive]}>{opt.label}</Text>
+                {active && <Ionicons name="checkmark-circle" size={20} color={c.gold} />}
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+
+        {chosen && (
+          <Animated.View style={[s.reveal, {
+            borderColor: (chosen.cold ? c.overdue : c.success) + '40',
+            backgroundColor: (chosen.cold ? c.overdue : c.success) + '0E',
+            opacity: revealAnim,
+            transform: [{ translateY: revealAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+          }]}>
+            <Ionicons name={chosen.cold ? 'snow-outline' : 'flame-outline'} size={20} color={chosen.cold ? c.overdue : c.success} />
+            <Text style={s.revealText}>{REACH_RESPONSE[chosen.value]}</Text>
+          </Animated.View>
+        )}
+      </ScrollView>
+
+      <TouchableOpacity style={[s.btn, !picked && s.btnDisabled]} onPress={onNext} disabled={!picked} activeOpacity={0.85}>
+        <Text style={s.btnText}>{picked ? "Let's fix that →" : 'Pick one to continue'}</Text>
+      </TouchableOpacity>
+    </View>
+  )
+}
+
+function coldStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    wrap: { flex: 1, paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24 },
+    badge: {
+      alignSelf: 'flex-start', backgroundColor: c.overdue + '14',
+      borderRadius: Radius.full, paddingHorizontal: 12, paddingVertical: 6,
+      borderWidth: 1, borderColor: c.overdue + '30', marginBottom: 16,
+    },
+    badgeText: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: c.overdue, letterSpacing: 1.4 },
+    title: { fontFamily: FontFamily.display, fontSize: 32, color: c.primary, lineHeight: 38 },
+    sub: { fontFamily: FontFamily.sans, fontSize: 15, color: c.secondary, lineHeight: 22, marginTop: 10, marginBottom: 22 },
+    options: { gap: 12 },
+    option: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      backgroundColor: c.surface, borderRadius: Radius.card,
+      borderWidth: 1.5, borderColor: c.subtleBorder,
+      paddingHorizontal: 20, paddingVertical: 18,
+    },
+    optionActive: { borderColor: c.gold, backgroundColor: c.elevated },
+    optionText: { fontFamily: FontFamily.sans, fontSize: 16, color: c.secondary, flex: 1 },
+    optionTextActive: { color: c.primary, fontFamily: FontFamily.sansMedium },
+    reveal: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+      borderRadius: Radius.card, borderWidth: 1, padding: 14, marginTop: 18,
+    },
+    revealText: { flex: 1, fontFamily: FontFamily.sans, fontSize: 14, color: c.primary, lineHeight: 20 },
+    btn: { backgroundColor: c.primary, borderRadius: Radius.full, paddingVertical: 17, alignItems: 'center', marginTop: 12 },
+    btnDisabled: { opacity: 0.4 },
+    btnText: { fontFamily: FontFamily.display, fontSize: 17, color: c.background },
+  })
+}
+
+// ── Bob coach — the mascot guides + reacts across the whole flow ───────────────
+// Bob's score sets his mood, so he visibly arcs: upbeat → concerned → droops on
+// the consequence slide → recovers → celebrates at the finish.
+
+const COACH: Record<number, { score: number; line: string }> = {
+  0:  { score: 80,  line: "Hey, I'm Bob! Let's get you dialed in." },
+  1:  { score: 75,  line: 'Nice to meet you. A few quick questions.' },
+  2:  { score: 72,  line: 'Where are you in your journey?' },
+  3:  { score: 70,  line: 'What are you really going for?' },
+  4:  { score: 52,  line: 'Be honest with me. Where do things slip?' },
+  5:  { score: 45,  line: 'Tap anything that sounds like you.' },
+  6:  { score: 10,  line: 'Oof. This is what going quiet costs you.' },
+  7:  { score: 55,  line: 'But your network is your edge.' },
+  8:  { score: 72,  line: 'Hang tight, building your plan...' },
+  9:  { score: 85,  line: 'Your relationships are safe with me.' },
+  10: { score: 42,  line: 'Think of someone real. When did you last talk?' },
+  11: { score: 105, line: "Let's lock it in!" },
+}
+
+function BobCoach({ score, line, c }: { score: number; line: string; c: ColorPalette }) {
+  const anim = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    anim.setValue(0)
+    Animated.spring(anim, { toValue: 1, friction: 6, tension: 120, useNativeDriver: true }).start()
+  }, [line, anim])
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18, marginBottom: 6 }}>
+      <Bob score={score} size={62} />
+      <Animated.View style={{
+        flex: 1, opacity: anim,
+        transform: [
+          { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) },
+          { translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) },
+        ],
+      }}>
+        <View style={{
+          backgroundColor: c.surface, borderWidth: 1, borderColor: c.subtleBorder,
+          borderRadius: 16, paddingHorizontal: 13, paddingVertical: 10,
+        }}>
+          <View style={{
+            position: 'absolute', left: -6, top: '50%', marginTop: -6,
+            width: 0, height: 0,
+            borderTopWidth: 6, borderBottomWidth: 6, borderRightWidth: 7,
+            borderTopColor: 'transparent', borderBottomColor: 'transparent', borderRightColor: c.surface,
+          }} />
+          <Text style={{ fontFamily: FontFamily.sans, fontSize: 13.5, color: c.primary, lineHeight: 18 }}>{line}</Text>
+        </View>
+      </Animated.View>
     </View>
   )
 }
@@ -959,30 +1096,7 @@ export default function OnboardingScreen() {
         return <TrustSlide firstName={firstName} c={c} onNext={() => setStep(10)} />
 
       case 10:
-        return (
-          <ScrollView contentContainerStyle={s.resultsWrap} showsVerticalScrollIndicator={false}>
-            <View style={s.resultsBadge}>
-              <Text style={s.resultsBadgeText}>YOUR PLAN IS READY</Text>
-            </View>
-            <Text style={s.resultsTitle}>
-              {firstName ? `${firstName}, 8 relationships\nare going cold.` : '8 relationships\nare going cold.'}
-            </Text>
-            <Text style={s.resultsSub}>
-              These aren't just contacts — they're the people who can refer you, vouch for you, and open doors that applications can't. Every week you don't reach out, someone else does.
-            </Text>
-            <View style={s.chartWrap}>
-              <Text style={s.chartLabel}>Network health with Dialed</Text>
-              <HealthChart c={c} />
-              <View style={s.chartLegend}>
-                <Text style={s.chartLegendText}>Now</Text>
-                <Text style={s.chartLegendText}>Month 6</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={s.nextBtn} onPress={() => setStep(11)} activeOpacity={0.85}>
-              <Text style={s.nextBtnText}>Let's fix that →</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        )
+        return <ColdRealizationSlide c={c} onNext={() => setStep(11)} />
 
       case 11:
         return (
@@ -1048,6 +1162,7 @@ export default function OnboardingScreen() {
     }
   }
 
+  const coach = COACH[step]
   const showBack = step >= 1 && step <= 7
   const showProgressBar = step <= 10
 
@@ -1066,6 +1181,8 @@ export default function OnboardingScreen() {
         </View>
         <View style={s.headerRight} />
       </View>
+
+      {coach && step !== 6 && <BobCoach score={coach.score} line={coach.line} c={c} />}
 
       <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
         {renderStep()}
@@ -1100,27 +1217,6 @@ function makeStyles(c: ColorPalette) {
     checkCircleDone: { backgroundColor: c.success, borderColor: c.success },
     checkLabel: { fontFamily: FontFamily.sans, fontSize: 17, color: c.tertiary },
     checkLabelDone: { color: c.primary, fontFamily: FontFamily.sansMedium },
-
-    // Results
-    resultsWrap: { paddingHorizontal: 24, paddingTop: 28, paddingBottom: 36, gap: 18 },
-    resultsBadge: {
-      alignSelf: 'flex-start', backgroundColor: c.success + '18',
-      borderRadius: Radius.full, paddingHorizontal: 12, paddingVertical: 6,
-      borderWidth: 1, borderColor: c.success + '30',
-    },
-    resultsBadgeText: { fontFamily: FontFamily.sansMedium, fontSize: 11, color: c.success, letterSpacing: 1.4 },
-    resultsTitle: { fontFamily: FontFamily.display, fontSize: 36, color: c.primary, lineHeight: 42 },
-    resultsSub: { fontFamily: FontFamily.sans, fontSize: 15, color: c.secondary, lineHeight: 23 },
-    chartWrap: {
-      backgroundColor: c.surface, borderRadius: Radius.card,
-      borderWidth: 1, borderColor: c.subtleBorder, padding: 16, gap: 12,
-    },
-    chartLabel: {
-      fontFamily: FontFamily.sansMedium, fontSize: 11,
-      color: c.tertiary, letterSpacing: 1.2, textTransform: 'uppercase',
-    },
-    chartLegend: { flexDirection: 'row', justifyContent: 'space-between' },
-    chartLegendText: { fontFamily: FontFamily.sans, fontSize: 10, color: c.tertiary },
 
     // Save progress
     saveWrap: { paddingHorizontal: 24, paddingTop: 28, paddingBottom: 40, gap: 16 },

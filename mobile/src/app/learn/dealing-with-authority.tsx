@@ -13,6 +13,7 @@ import { SkeletonBlock } from '@/components/SkeletonBlock'
 import { getProgress, markFeatureUsed } from '@/lib/learnProgress'
 import { usePro } from '@/hooks/usePro'
 import { getApiUrl } from '@/lib/api'
+import { contentHeaders } from '@/lib/contentApi'
 
 const TOPIC = 'dealing-with-authority'
 const TOTAL_ITEMS = 5
@@ -121,7 +122,7 @@ export default function DealingWithAuthorityPage() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/article`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({ topic: 'dealing-with-authority', title: '6 tips for communicating with authority figures' }),
       })
       const data = await res.json()
@@ -149,7 +150,7 @@ export default function DealingWithAuthorityPage() {
     try {
       const res = await fetch(`${getApiUrl()}/api/content/books`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await contentHeaders(),
         body: JSON.stringify({}),
       })
       if (!res.ok) throw new Error(`Server error ${res.status}`)

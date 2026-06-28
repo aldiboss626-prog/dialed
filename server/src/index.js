@@ -17,6 +17,8 @@ const pendingResponsesRoutes = require('./routes/pendingResponses');
 const trackerRoutes = require('./routes/tracker');
 const contentRoutes = require('./routes/content');
 const webhooksRoutes = require('./routes/webhooks');
+const accountRoutes = require('./routes/account');
+const { supabaseAuth, dailyLimit } = require('./middleware/contentGuard');
 const { startEscalationEngine } = require('./services/escalation');
 
 const app = express();
@@ -37,7 +39,9 @@ app.use('/api/gmail', gmailRoutes);
 app.use('/api', draftRoutes);
 app.use('/api/pending-responses', pendingResponsesRoutes);
 app.use('/api/tracker', trackerRoutes);
-app.use('/api/content', contentRoutes);
+// AI endpoints spend the Anthropic key — require a logged-in user + cap per-user daily usage.
+app.use('/api/content', supabaseAuth, dailyLimit(40), contentRoutes);
+app.use('/api/account', accountRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 
 startEscalationEngine();

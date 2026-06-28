@@ -483,6 +483,20 @@ function makeStyles(c: ColorPalette) {
     historyTitle: { fontFamily: FontFamily.sansMedium, fontSize: 14, color: c.primary, lineHeight: 20 },
     historySub: { fontFamily: FontFamily.sans, fontSize: 13, color: c.secondary, marginTop: 1 },
     historySep: { height: 1, backgroundColor: c.subtleBorder, marginLeft: 16 },
+    noteComposer: {
+      marginHorizontal: 16, marginBottom: 10,
+      flexDirection: 'row', alignItems: 'flex-end', gap: 10,
+      backgroundColor: c.surface, borderRadius: 16,
+      borderWidth: 1, borderColor: c.subtleBorder, padding: 10,
+    },
+    noteInput: {
+      flex: 1, fontFamily: FontFamily.sans, fontSize: 14, color: c.primary,
+      minHeight: 38, maxHeight: 120, paddingTop: 8, paddingHorizontal: 6, lineHeight: 20,
+    },
+    noteAddBtn: {
+      width: 38, height: 38, borderRadius: 12, backgroundColor: c.gold,
+      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    },
     // About
     aboutRow: {
       flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -550,6 +564,8 @@ export default function ContactDetailScreen() {
   const [showCelebration, setShowCelebration] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [addingNote, setAddingNote] = useState(false)
 
   // Cadence save state — explicit Save button, not debounced
   const [lastSavedCadence, setLastSavedCadence] = useState(0)
@@ -572,6 +588,21 @@ export default function ContactDetailScreen() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  async function handleAddNote() {
+    const text = noteDraft.trim()
+    if (!text || !id) return
+    setAddingNote(true)
+    try {
+      await contactsDb.addNote(parseInt(id), text)
+      setNoteDraft('')
+      await load()
+    } catch {
+      Alert.alert('Could not save note', 'Please try again.')
+    } finally {
+      setAddingNote(false)
+    }
+  }
 
   const healthScore = contact ? contactHealthScore(contact) : 0
   const hColor = healthColor(c, healthScore)
@@ -729,16 +760,23 @@ export default function ContactDetailScreen() {
   const defaultCadence = STAR_CADENCE[contact.stars] ?? 14
   const isCustomCadence = contact.cadence_days !== defaultCadence
 
-  // Timeline — built from available data
+  // Timeline — built from interactions (newest first), including notes you add manually
   const timeline: { icon: string; title: string; sub: string }[] = []
   const interactions = (contact as any).interactions
   if (Array.isArray(interactions) && interactions.length > 0) {
-    interactions.slice(0, 2).forEach((i: any) => {
+    const sorted = [...interactions].sort(
+      (a: any, b: any) => new Date(b.date ?? b.created_at).getTime() - new Date(a.date ?? a.created_at).getTime()
+    )
+    sorted.forEach((i: any) => {
       const d = Math.floor((Date.now() - new Date(i.date ?? i.created_at).getTime()) / 86_400_000)
+      const meta =
+        i.type === 'note' ? { icon: 'create-outline', verb: 'Note' }
+        : i.type === 'email' ? { icon: 'mail-outline', verb: 'Email detected' }
+        : { icon: 'chatbubble-outline', verb: 'You reached out' }
       timeline.push({
-        icon: i.type === 'email' ? 'mail-outline' : 'chatbubble-outline',
-        title: `${i.type === 'email' ? 'Email detected' : 'You reached out'} · ${relativeLabel(d)}`,
-        sub: i.notes ?? '',
+        icon: meta.icon,
+        title: `${meta.verb} · ${relativeLabel(d)}`,
+        sub: i.note ?? '',
       })
     })
   } else {
@@ -877,10 +915,10 @@ export default function ContactDetailScreen() {
             style={[s.talkedBtn, { backgroundColor: talkSuccess ? c.success : c.primary }]}
             activeOpacity={0.85}
           >
-            {talkLoading ? <ActivityIndicator color="#fff" /> : (
+            {talkLoading ? <ActivityIndicator color={c.background} /> : (
               <>
-                <Ionicons name="checkmark" size={20} color="#fff" />
-                <Text style={s.talkedBtnText}>{talkSuccess ? 'Logged!' : 'We talked'}</Text>
+                <Ionicons name="checkmark" size={20} color={talkSuccess ? '#fff' : c.background} />
+                <Text style={[s.talkedBtnText, { color: talkSuccess ? '#fff' : c.background }]}>{talkSuccess ? 'Logged!' : 'We talked'}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -1013,6 +1051,26 @@ export default function ContactDetailScreen() {
 
         {/* Relationship history */}
         <Text style={s.historyHeader}>Relationship history</Text>
+        <View style={s.noteComposer}>
+          <TextInput
+            value={noteDraft}
+            onChangeText={setNoteDraft}
+            placeholder="Add a note about this person…"
+            placeholderTextColor={c.tertiary}
+            style={s.noteInput}
+            multiline
+          />
+          <TouchableOpacity
+            style={[s.noteAddBtn, (!noteDraft.trim() || addingNote) && { opacity: 0.4 }]}
+            onPress={handleAddNote}
+            disabled={!noteDraft.trim() || addingNote}
+            activeOpacity={0.8}
+          >
+            {addingNote
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="add" size={22} color="#fff" />}
+          </TouchableOpacity>
+        </View>
         <View style={s.historyCard}>
           {timeline.map((item, i) => (
             <View key={i}>
