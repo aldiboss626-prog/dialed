@@ -121,14 +121,29 @@ d:\Dialed\
 
 ## 6. New-device setup (download & run)
 
-**Prereqs to install:**
-- **Node.js** (this machine used v24; any current LTS 20+ is fine) + npm.
-- **Git.**
-- **Expo Go** app on your phone (App Store / Play) — for testing without a native build.
-- Optional: **EAS CLI** (`npm i -g eas-cli`) for cloud builds; a code editor (VS Code).
-- You do NOT need Xcode/Android Studio to run via Expo Go.
+### Step 1 — Install the tools (one-time, on a fresh machine)
 
-**Clone & install:**
+1. **Node.js (includes npm)** — the runtime everything runs on.
+   - Download the **LTS** installer from <https://nodejs.org> (Windows `.msi`, macOS `.pkg`), run
+     it, accept all defaults. (Advanced: use `nvm-windows` / `nvm` to manage versions instead.)
+   - Open a NEW terminal and verify: `node -v` (want v20+; this machine used v24) and `npm -v`.
+2. **Git** — to clone the repo.
+   - Windows: <https://git-scm.com/download/win> (accept defaults — this also installs "Git Bash").
+   - macOS: run `xcode-select --install`, or get it from <https://git-scm.com/download/mac>.
+   - Verify: `git --version`.
+3. **Expo** — **nothing to install globally.** The Expo CLI ships *inside* the project; you run it
+   with `npx expo …`. Do NOT run `npm i -g expo-cli` (that's the deprecated legacy CLI).
+4. **Expo Go** app on your phone — install from the **iOS App Store** / **Google Play**. This is how
+   you run the app on your phone without building it.
+5. **A code editor** — VS Code recommended: <https://code.visualstudio.com>.
+6. **Optional — only for native/store builds, NOT needed for daily testing:** `npm i -g eas-cli`
+   (Expo's cloud build service). You do **not** need Xcode or Android Studio to test via Expo Go.
+
+> You don't install React Native / the Expo packages by hand. **`npm install` (Step 2) downloads
+> every dependency automatically** — expo-router, expo-image-picker, expo-haptics, react-native,
+> the server libs, all of it — into each workspace's `node_modules/`.
+
+### Step 2 — Get the code + dependencies
 ```bash
 git clone https://github.com/aldiboss626-prog/dialed.git
 cd dialed
