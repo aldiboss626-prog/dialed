@@ -10,6 +10,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: CORS_ORIGIN
+        value: https://app.dialed.now
       - key: JWT_SECRET
         generateValue: true
       - key: ANTHROPIC_API_KEY
