@@ -83,7 +83,7 @@ ${opps.map(o => `- ${o.title} (${o.status}, deadline: ${o.deadline || 'TBD'})`).
 
     if (pr) {
       const messageBody = extractedFromImage || emailContent || pr.email_body || pr.preview || null;
-      systemPrompt = `You are helping ${user.name} reply to an email they received from ${contact.name}${contact.role ? ', ' + contact.role : ''}. The email was about: "${pr.subject}". Write a warm, professional reply in first person as ${user.name}. 3-5 sentences. Reference the specific topic they raised. Sound like a real person responding promptly, not a template. Output only the message body — no greeting prefix, no sign-off.`;
+      systemPrompt = `You are helping ${user.name} reply to an email they received from ${contact.name}${contact.role ? ', ' + contact.role : ''}. The email was about: "${pr.subject}". Write a warm, professional reply in first person as ${user.name}. 3-5 sentences. Reference the specific topic they raised. Sound like a real person responding promptly, not a template. Format the reply EXACTLY like this, keeping every blank line and never merging the parts together:\n\nHey ${contact.name.split(' ')[0]},\n\n[the body — 3-5 sentences]\n\nBest,\n${user.name}\n\nThe greeting MUST be on its own line and end with a comma — never run it into the first sentence (do NOT write "Hey ${contact.name.split(' ')[0]}! ..." on one line). Match the greeting word to their tone: "Dear" if their email is formal, "Hi" or "Hey" if casual. Keep one blank line between the greeting, the body, and the closing. Output plain text only — no subject line, no markdown.`;
       userContent = messageBody
         ? `Draft a reply to this email:\n\nFrom: ${contact.name}\nSubject: ${pr.subject}\nMessage: ${messageBody}\n\nContext:\n${context}`
         : `Draft a reply to this email:\n\nFrom: ${contact.name}\nSubject: ${pr.subject}\n\nContext:\n${context}`;
@@ -91,14 +91,14 @@ ${opps.map(o => `- ${o.title} (${o.status}, deadline: ${o.deadline || 'TBD'})`).
   }
 
   if (!systemPrompt) {
-    systemPrompt = `You are helping ${user.name}, an ambitious finance student at the University of Miami, draft a professional follow-up message to a contact in their network. Write in first person as ${user.name}. Keep it warm but professional, 3-5 sentences. Reference something specific from their recent interaction history. Never sound generic. Output only the message body — no subject line, no greeting prefix like "Hi [name]," or sign-off. Just the body paragraph.`;
+    systemPrompt = `You are helping ${user.name}, an ambitious finance student at the University of Miami, draft a professional follow-up message to a contact in their network. Write in first person as ${user.name}. Keep it warm but professional, 3-5 sentences. Reference something specific from their recent interaction history. Never sound generic. Format the message EXACTLY like this, keeping every blank line and never merging the parts together:\n\nHey ${contact.name.split(' ')[0]},\n\n[the body — 2-4 short sentences]\n\nBest,\n${user.name}\n\nThe greeting MUST be on its own line and end with a comma — never run it into the first sentence (do NOT write "Hey ${contact.name.split(' ')[0]}! ..." on one line). Match the greeting word to the relationship: "Dear" if formal, "Hi" or "Hey" if casual. Keep one blank line between the greeting, the body, and the closing. Output plain text only — no subject line, no markdown.`;
     userContent = `Draft a follow-up message for this contact:\n\n${context}`;
   }
 
   try {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 300,
+      max_tokens: 400,
       system: systemPrompt,
       messages: [{ role: 'user', content: userContent }],
     });

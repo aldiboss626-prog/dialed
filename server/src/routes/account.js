@@ -5,7 +5,6 @@
 // the auth user removes ALL of their rows (contacts, opportunities, email_threads,
 // pending_responses, notifications, interactions, sent_replies, groups, tags) automatically.
 const router = require('express').Router();
-const fetch = require('node-fetch');
 const { supabaseAuth } = require('../middleware/contentGuard');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://pxkmpuubzeqppkxludla.supabase.co';

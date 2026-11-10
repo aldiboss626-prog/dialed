@@ -81,9 +81,11 @@ function runEscalation() {
 
         if (shouldNotifyOpportunity(stars, daysUntil)) {
           const windowHours = daysUntil <= 1 ? 12 : 24;
+          // Match both types here — overdue deadlines are inserted as 'urgent',
+          // so checking only 'deadline' would re-insert every run forever.
           const recentNotif = db.prepare(`
             SELECT id FROM notifications
-            WHERE user_id = ? AND opportunity_id = ? AND type = 'deadline'
+            WHERE user_id = ? AND opportunity_id = ? AND type IN ('deadline', 'urgent')
             AND created_at > datetime('now', '-${windowHours} hours')
           `).get(user.id, opp.id);
 
@@ -209,10 +211,31 @@ function runResponseEscalation() {
   }
 }
 
+// ── Pruning ──────────────────────────────────────────────────────────────────
+// Notifications were previously never deleted (except one-by-one by the user),
+// so the table grows forever. Keep it lean: read ones expire after 7 days,
+// everything expires after 30.
+function pruneNotifications() {
+  try {
+    const read = db.prepare(
+      "DELETE FROM notifications WHERE is_read = 1 AND created_at < datetime('now', '-7 days')"
+    ).run();
+    const old = db.prepare(
+      "DELETE FROM notifications WHERE created_at < datetime('now', '-30 days')"
+    ).run();
+    const pruned = read.changes + old.changes;
+    if (pruned > 0) console.log(`Pruned ${pruned} old notifications`);
+  } catch (err) {
+    console.error('Notification pruning error:', err.message);
+  }
+}
+
 function startEscalationEngine() {
+  pruneNotifications();
   runEscalation();
   runResponseEscalation();
   setInterval(() => {
+    pruneNotifications();
     runEscalation();
     runResponseEscalation();
   }, 60 * 60 * 1000);

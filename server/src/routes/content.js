@@ -320,6 +320,9 @@ router.post('/draft-reply', async (req, res) => {
     ? `\nHere are a few replies ${senderName || 'this person'} has written before. Match their voice, tone, greetings, and sign-offs — but do not copy their content:\n"""\n${samples.join('\n---\n')}\n"""\n`
     : '';
 
+  const firstName = String(contactName).trim().split(/\s+/)[0];
+  const greetName = firstName && firstName.toLowerCase() !== 'them' ? firstName : 'there';
+
   const instructions = `You are helping ${senderName || 'a college student'} reply to an email from ${who}.
 
 Goal for this reply: ${intentLine}
@@ -327,14 +330,25 @@ ${styleBlock}
 Rules:
 - Match the tone and formality of the original email.
 - Sound human and natural — write in the sender's own voice, not corporate boilerplate.
-- Be concise (3-6 sentences). No placeholder brackets like [Name] unless truly unavoidable.
+- Be concise (3-6 sentences in the body). No placeholder brackets like [Name] unless truly unavoidable.
 - Do not invent specific facts, dates, or commitments that weren't in the original email.
 - Ready to send as-is.
 
-Return exactly this JSON:
+FORMAT the reply in exactly three parts separated by a blank line, like this:
+
+Hey ${greetName},
+
+<the body — 3 to 6 sentences>
+
+Best,
+${senderName || 'the sender'}
+
+The greeting MUST be on its own line and end with a comma — NEVER merge it into the first sentence (do NOT write "Hey ${greetName}! ..." on one line). Use "Dear ${greetName}," if the email is formal, or "Hi ${greetName}," / "Hey ${greetName}," if casual. Pick a closing that fits ("Best," / "Thanks," / "Talk soon,").
+
+Return exactly this JSON (put every line break inside the reply as \\n):
 {
   "subject": "the reply subject line, prefixed with 'Re: ' if appropriate",
-  "reply": "the full email body, including a greeting and sign-off"
+  "reply": "the greeting line, then a blank line, then the body, then a blank line, then the closing and name"
 }`;
 
   try {

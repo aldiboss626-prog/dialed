@@ -29,10 +29,16 @@ function verifySignature(body, signatureHeader) {
     .createHmac('sha256', REVENUECAT_WEBHOOK_SECRET)
     .update(body)
     .digest('hex');
-  return crypto.timingSafeEqual(
-    Buffer.from(expected, 'hex'),
-    Buffer.from(signatureHeader ?? '', 'hex')
-  );
+  try {
+    // timingSafeEqual THROWS on length mismatch — a malformed header must read as
+    // "invalid signature", not crash the handler.
+    return crypto.timingSafeEqual(
+      Buffer.from(expected, 'hex'),
+      Buffer.from(signatureHeader ?? '', 'hex')
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function setSupabaseTier(userId, tier) {

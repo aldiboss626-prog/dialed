@@ -5,17 +5,28 @@
 const router = require('express').Router();
 const db = require('../db/database');
 const authenticate = require('../middleware/auth');
-const { detectPendingResponses } = require('../services/gmailSync');
-const fetch = require('node-fetch');
+const { syncUser } = require('../services/gmailSync');
+const google = require('../services/googleOauth');
 
-let lastSynced = new Date(Date.now() - 2 * 60 * 1000);
+// Per-user last-sync time. A single module-level Date here would leak one user's
+// sync activity into every other user's "last synced" label.
+const lastSyncedByUser = new Map(); // userId -> Date
+
+function syncedLabel(userId) {
+  const t = lastSyncedByUser.get(userId);
+  if (!t) return 'not yet synced';
+  const diffMin = Math.floor((Date.now() - t.getTime()) / 60000);
+  return diffMin < 1 ? 'just now' : diffMin === 1 ? '1 minute ago' : `${diffMin} minutes ago`;
+}
 
 router.get('/status', authenticate, (req, res) => {
   const user = db.prepare('SELECT email FROM users WHERE id = ?').get(req.userId);
-  const diffMs = Date.now() - lastSynced.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const label = diffMin < 1 ? 'just now' : diffMin === 1 ? '1 minute ago' : `${diffMin} minutes ago`;
-  res.json({ connected: true, email: user.email, lastSynced: label });
+  const connected = google.isConnected(req.userId);
+  res.json({
+    connected,
+    email: connected ? user?.email ?? '' : '',
+    lastSynced: connected ? syncedLabel(req.userId) : '',
+  });
 });
 
 router.get('/recent', authenticate, (req, res) => {
@@ -27,50 +38,65 @@ router.get('/recent', authenticate, (req, res) => {
   res.json(emails);
 });
 
-router.post('/sync', authenticate, (req, res) => {
-  lastSynced = new Date();
-  try { detectPendingResponses(req.userId); } catch {}
-  res.json({ success: true, message: 'Gmail synced successfully', syncedAt: lastSynced.toISOString() });
+router.post('/sync', authenticate, async (req, res) => {
+  const result = await syncUser(req.userId);
+  if (!result.ok && result.reason === 'reauth_required') {
+    return res.status(403).json({ error: 'reauth_required', message: 'Reconnect Gmail to keep syncing.' });
+  }
+  const now = new Date();
+  lastSyncedByUser.set(req.userId, now);
+  res.json({ success: true, message: 'Gmail synced successfully', syncedAt: now.toISOString() });
 });
 
 router.get('/contacts', authenticate, async (req, res) => {
-  const user = db.prepare('SELECT google_access_token FROM users WHERE id = ?').get(req.userId);
-  if (!user?.google_access_token) {
+  // Get a valid access token, transparently refreshing if it expired.
+  let accessToken;
+  try {
+    accessToken = await google.getValidAccessToken(req.userId);
+  } catch {
+    return res.status(403).json({ error: 'reauth_required', message: 'Reconnect Gmail to refresh your Google Contacts access.' });
+  }
+  if (!accessToken) {
     return res.status(403).json({ error: 'not_connected', message: 'Connect Gmail to import Google Contacts.' });
   }
 
   const existingEmails = req.query.existingEmails
-    ? req.query.existingEmails.split(',').map(e => e.toLowerCase().trim()).filter(Boolean)
+    ? String(req.query.existingEmails).split(',').map(e => e.toLowerCase().trim()).filter(Boolean)
     : [];
 
   let pageToken = undefined;
   const allConnections = [];
 
-  // Paginate through all contacts (max 1000 per page)
-  do {
-    const url = new URL('https://people.googleapis.com/v1/people/me/connections');
-    url.searchParams.set('personFields', 'names,emailAddresses,phoneNumbers,organizations');
-    url.searchParams.set('pageSize', '1000');
-    if (pageToken) url.searchParams.set('pageToken', pageToken);
+  // Paginate through all contacts (max 1000 per page). The whole loop is wrapped:
+  // Express 4 does NOT catch async throws, so an unhandled network error here would
+  // crash the process instead of returning a 502.
+  try {
+    do {
+      const url = new URL('https://people.googleapis.com/v1/people/me/connections');
+      url.searchParams.set('personFields', 'names,emailAddresses,phoneNumbers,organizations');
+      url.searchParams.set('pageSize', '1000');
+      if (pageToken) url.searchParams.set('pageToken', pageToken);
 
-    const resp = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${user.google_access_token}` },
-    });
+      const resp = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
 
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      if (resp.status === 401) {
-        // Token expired — clear it so the client knows to re-authenticate
-        db.prepare('UPDATE users SET google_access_token = NULL WHERE id = ?').run(req.userId);
-        return res.status(403).json({ error: 'token_expired', message: 'Reconnect Gmail to refresh your Google Contacts access.' });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        if (resp.status === 401) {
+          // Access token was rejected mid-flight — signal a reconnect.
+          return res.status(403).json({ error: 'reauth_required', message: 'Reconnect Gmail to refresh your Google Contacts access.' });
+        }
+        return res.status(502).json({ error: 'google_api_error', message: err.error?.message ?? 'Failed to fetch contacts from Google.' });
       }
-      return res.status(502).json({ error: 'google_api_error', message: err.error?.message ?? 'Failed to fetch contacts from Google.' });
-    }
 
-    const json = await resp.json();
-    allConnections.push(...(json.connections ?? []));
-    pageToken = json.nextPageToken;
-  } while (pageToken);
+      const json = await resp.json();
+      allConnections.push(...(json.connections ?? []));
+      pageToken = json.nextPageToken;
+    } while (pageToken);
+  } catch {
+    return res.status(502).json({ error: 'google_api_error', message: 'Could not reach Google. Try again in a moment.' });
+  }
 
   const candidates = allConnections
     .map(person => {

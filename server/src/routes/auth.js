@@ -3,6 +3,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db/database');
 const authenticate = require('../middleware/auth');
+const rateLimit = require('../middleware/rateLimit');
+
+// Credential endpoints are the brute-force surface — throttle per IP.
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, keyPrefix: 'login' });
+const registerLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyPrefix: 'register' });
 
 function cookieOpts() {
   return {
@@ -13,7 +18,7 @@ function cookieOpts() {
   };
 }
 
-router.post('/register', (req, res) => {
+router.post('/register', registerLimiter, (req, res) => {
   const { email, password, name } = req.body;
   if (!email || !password || !name) {
     return res.status(400).json({ message: 'All fields required' });
@@ -31,7 +36,7 @@ router.post('/register', (req, res) => {
   res.json({ user: { id: result.lastInsertRowid, email, name }, token });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
 

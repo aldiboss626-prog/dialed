@@ -3,7 +3,6 @@
 //   2) dailyLimit   — caps how many AI actions one user can trigger per day.
 // Together these mean a leaked server URL can't be looped to drain your credit.
 
-const fetch = require('node-fetch');
 
 // Public values (the anon key is meant to be public). Override via env in production.
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://pxkmpuubzeqppkxludla.supabase.co';
